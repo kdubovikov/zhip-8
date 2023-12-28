@@ -6,7 +6,7 @@ pub const Rom = struct {
 
     const Self = @This();
 
-    fn load(path: []const u8) !Self {
+    pub fn load(path: []const u8) !Self {
         var file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
 
@@ -20,7 +20,7 @@ pub const Rom = struct {
 
     /// Read a single instruction from the ROM.
     /// Returns 0 if the instruction is out of bounds.
-    fn readInstruction(self: Self, offset: usize) u16 {
+    pub fn readInstruction(self: Self, offset: usize) u16 {
         if (offset + 2 > self.size) {
             return 0;
         }
@@ -35,7 +35,7 @@ fn combine(a: u8, b: u8) u16 {
     return @as(u16, a) << 8 | @as(u16, b);
 }
 
-test "combine" {
+test "combine bytes" {
     var a: u8 = 0x12;
     var b: u8 = 0x34;
     var c = combine(a, b);

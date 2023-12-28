@@ -2,6 +2,7 @@ const std = @import("std");
 const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
+const chip8 = @import("chip8.zig");
 
 const memSize: usize = 4096; // 4 KB
 const displayWidth = 64;
