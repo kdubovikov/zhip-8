@@ -1,0 +1,23 @@
+# Zig build artifacts
+zig-cache/
+
+# Zig output binaries
+*.zig.o
+
+# Zig test artifacts
+zig-test/
+
+# Zig documentation
+zig-doc/
+
+zig-out/
+
+# Zig package manager
+.zpm/
+.zigpkg/
+.zigdeps/
+
+# Zig build system
+.build/
+.build.zig/
+.build.zig.*
