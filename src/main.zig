@@ -71,7 +71,11 @@ const Display = struct {
         return Self{ .window = window, .renderer = renderer, .screen = texture, .pixels = pixels };
     }
 
-    fn setPixel(self: *Self, x: usize, y: usize, state: PixelState) void {
+    fn setPixel(self: *Self, x: usize, y: usize, state: PixelState) !void {
+        if ((x >= displayWidth) or (y >= displayHeight)) {
+            return error.InitError;
+        }
+
         self.pixels[y * displayWidth + x] = if (state == PixelState.on) 0xFFFFFFFF else 0x00000000;
 
         // print all pixels as table
@@ -117,6 +121,6 @@ pub fn main() !void {
     var display = try Display.init();
     defer display.destroy();
 
-    display.setPixel(32, 20, PixelState.on);
+    try display.setPixel(32, 20, PixelState.on);
     try display.renderLoop();
 }
