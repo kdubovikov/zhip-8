@@ -4,28 +4,8 @@ const c = @cImport({
 });
 const chip8 = @import("chip8.zig");
 
-const memSize: usize = 4096; // 4 KB
 const displayWidth = 64;
 const displayHeight = 32;
-
-const Memory = struct {
-    memory: [memSize]u8,
-
-    fn init() Memory {
-        var mem: [memSize]u8 = undefined;
-        for (mem[0..]) |*byte| {
-            byte.* = 0;
-        }
-
-        return Memory{ .memory = mem };
-    }
-};
-
-test "memory init" {
-    var memory = Memory.init();
-    try std.testing.expect(memory.memory[0] == 0);
-    try std.testing.expect(memory.memory[memSize - 1] == 0);
-}
 
 const DisplayError = error{InitError};
 
@@ -36,9 +16,9 @@ fn sdlErr(result: c_int) !void {
     }
 }
 
-const PixelState = enum { on, off };
+pub const PixelState = enum { on, off };
 
-const Display = struct {
+pub const Display = struct {
     window: *c.SDL_Window,
     renderer: *c.SDL_Renderer,
     screen: *c.SDL_Texture,
@@ -46,7 +26,7 @@ const Display = struct {
 
     const Self = @This();
 
-    fn init() DisplayError!Self {
+    pub fn init() DisplayError!Self {
         try sdlErr(c.SDL_Init(c.SDL_INIT_VIDEO));
 
         var window = c.SDL_CreateWindow("ZHIP-8", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, 640, 320, c.SDL_WINDOW_SHOWN) orelse {
@@ -72,28 +52,38 @@ const Display = struct {
         return Self{ .window = window, .renderer = renderer, .screen = texture, .pixels = pixels };
     }
 
-    fn setPixel(self: *Self, x: usize, y: usize, state: PixelState) !void {
+    pub fn setPixel(self: *Self, x: usize, y: usize, state: PixelState) !void {
         if ((x >= displayWidth) or (y >= displayHeight)) {
             return error.InitError;
         }
 
         self.pixels[y * displayWidth + x] = if (state == PixelState.on) 0xFFFFFFFF else 0x00000000;
-
-        // print all pixels as table
-        // for (0..displayHeight) |yy| {
-        //     for (0..displayWidth) |xx| {
-        //         var p = self.pixels[yy * displayWidth + xx];
-        //         if (p == 0xFFFFFFFF) {
-        //             std.debug.print("X", .{});
-        //         } else {
-        //             std.debug.print(" ", .{});
-        //         }
-        //     }
-        //     std.debug.print("\n", .{});
-        // }
     }
 
-    fn renderLoop(self: Self) !void {
+    /// Print all pixels to stdout.
+    fn printPixels(self: Self) void {
+        // print all pixels as table
+        for (0..displayHeight) |yy| {
+            for (0..displayWidth) |xx| {
+                var p = self.pixels[yy * displayWidth + xx];
+                if (p == 0xFFFFFFFF) {
+                    std.debug.print("X", .{});
+                } else {
+                    std.debug.print(" ", .{});
+                }
+            }
+            std.debug.print("\n", .{});
+        }
+    }
+
+    /// Clear the screen by setting all pixels to off.
+    pub fn clearScreen(self: *Self) !void {
+        for (self.pixels[0..]) |*pixel| {
+            pixel.* = 0;
+        }
+    }
+
+    pub fn renderLoop(self: Self) !void {
         mainloop: while (true) {
             var sdl_event: c.SDL_Event = undefined;
             while (c.SDL_PollEvent(&sdl_event) != 0) {
