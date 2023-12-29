@@ -1,5 +1,6 @@
 const std = @import("std");
 const rom = @import("rom.zig");
+const dsp = @import("display.zig");
 
 const memSize: usize = 4096; // 4 KB
 const memStart: usize = 0x200; // 512, the first 512 bytes are reserved for the interpreter
@@ -13,12 +14,13 @@ pub const Chip8 = struct {
     stack: [16]u16, // stack,
     delayTimer: u8, // delay timer
     soundTimer: u8, // sound timer
+    display: *dsp.Display,
 
     memory: [memSize]u8, // 4 KB
 
     const Self = @This();
 
-    pub fn init(romPath: []const u8) !Self {
+    pub fn init(romPath: []const u8, display: *dsp.Display) !Self {
         var mem: [memSize]u8 = undefined;
         // clear memory
         for (mem[0..]) |*byte| {
@@ -28,7 +30,16 @@ pub const Chip8 = struct {
         var v = [_]u8{0} ** 16;
         var stack = [_]u16{0} ** 16;
 
-        var ret = Self{ .pc = memStart, .memory = mem, .i = 0, .v = v, .stack = stack, .delayTimer = 0, .soundTimer = 0 };
+        var ret = Self{
+            .pc = memStart,
+            .memory = mem,
+            .i = 0,
+            .v = v,
+            .stack = stack,
+            .delayTimer = 0,
+            .soundTimer = 0,
+            .display = display,
+        };
 
         // load rom
         var r = try rom.Rom.load(romPath);
@@ -178,7 +189,9 @@ test "combine bytes" {
 }
 
 test "Load ROM and check memory contents" {
-    var c = try Chip8.init("roms/IBM Logo.ch8");
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
     var r = try rom.Rom.load("roms/IBM Logo.ch8");
     for (r.data[0..]) |*byte| {
         try std.testing.expect(byte.* == c.memory[c.pc]);
@@ -187,14 +200,18 @@ test "Load ROM and check memory contents" {
 }
 
 test "Decode CLS" {
-    var c = try Chip8.init("roms/IBM Logo.ch8");
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
     var opcode: u16 = 0x00E0;
     var i = try c.decode(opcode);
     try std.testing.expect(i.cls.opcode == opcode);
 }
 
 test "Decode JMP" {
-    var c = try Chip8.init("roms/IBM Logo.ch8");
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
     var opcode: u16 = 0x1ABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.jmp.opcode == opcode);
@@ -202,7 +219,9 @@ test "Decode JMP" {
 }
 
 test "Decode SETVX" {
-    var c = try Chip8.init("roms/IBM Logo.ch8");
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
     var opcode: u16 = 0x6ABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.setvx.opcode == opcode);
@@ -211,7 +230,9 @@ test "Decode SETVX" {
 }
 
 test "Decode ADDVX" {
-    var c = try Chip8.init("roms/IBM Logo.ch8");
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
     var opcode: u16 = 0x7ABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.addvx.opcode == opcode);
@@ -220,7 +241,9 @@ test "Decode ADDVX" {
 }
 
 test "Decode SETI" {
-    var c = try Chip8.init("roms/IBM Logo.ch8");
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
     var opcode: u16 = 0xAABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.seti.opcode == opcode);
@@ -228,7 +251,9 @@ test "Decode SETI" {
 }
 
 test "Decode DRAW" {
-    var c = try Chip8.init("roms/IBM Logo.ch8");
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
     var opcode: u16 = 0xDABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.draw.opcode == opcode);
