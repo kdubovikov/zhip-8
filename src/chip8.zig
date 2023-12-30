@@ -159,7 +159,7 @@ pub const Chip8 = struct {
                         if (pixel != 0) {
                             const dspX = x + col;
                             const dspY = y + row;
-                            const flipVF = try self.display.setPixel(dspX, dspY, @enumFromInt(pixel));
+                            const flipVF = try self.display.setPixel(dspX, dspY);
                             self.v[VF] = if (flipVF) 1 else 0;
                         }
                     }
