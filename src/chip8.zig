@@ -57,10 +57,10 @@ pub const Chip8 = struct {
     }
 
     // cycle through the fetch, decode, and execute steps
-    pub fn cycle(self: *Self) void {
+    pub fn cycle(self: *Self) !void {
         const opcode = self.fetch();
-        self.decode(opcode);
-        self.execute();
+        const instruction = try self.decode(opcode);
+        try self.execute(instruction);
     }
 
     // fetch the next instruction and increment the program counter
@@ -125,8 +125,49 @@ pub const Chip8 = struct {
     }
 
     // execute the instruction
-    fn execute(self: *Self) void {
-        _ = self;
+    fn execute(self: *Self, instruction: Instruction) !void {
+        switch (instruction) {
+            .cls => {
+                try self.display.clearScreen();
+            },
+            .jmp => |jmp_struct| {
+                self.pc = jmp_struct.address;
+            },
+            .setvx => |setvx_struct| {
+                self.v[setvx_struct.register] = setvx_struct.value;
+            },
+            .addvx => |addvx_struct| {
+                self.v[addvx_struct.register] += addvx_struct.value;
+            },
+            .seti => |seti_struct| {
+                self.i = seti_struct.address;
+            },
+            .draw => |draw_struct| {
+                const x = self.v[draw_struct.registerX] & (dsp.displayWidth - 1);
+                const y = self.v[draw_struct.registerY] & (dsp.displayHeight - 1);
+                std.debug.print("drawing sprite at x: {}, y: {}\n", .{ x, y });
+                self.v[15] = 0; // VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that doesn't happen
+
+                for (0..draw_struct.height) |row| {
+                    const sprite = self.memory[self.i + row];
+
+                    for (0..8) |col| {
+                        const colByte = @as(u3, @truncate(col));
+                        const shiftBy: u8 = 0x80;
+                        const pixel = sprite & @as(u8, (shiftBy >> colByte));
+                        std.debug.print("pixel: {}\n", .{pixel});
+                        if (pixel != 0) {
+                            const index: usize = (x + col + ((y + row) * dsp.displayWidth));
+                            if (self.display.pixels[index] == 0xFFFFFFFF) {
+                                self.v[15] = 1;
+                            }
+                            // self.display.pixels[index] ^= 1;
+                            self.display.pixels[index] = if (self.display.pixels[index] == 0) 0xFFFFFFFF else 0;
+                        }
+                    }
+                }
+            },
+        }
     }
 };
 
@@ -145,7 +186,7 @@ const OpCodes = enum(u4) {
     DRAW = 0xD, // Draw sprite at VX, VY with height N
 };
 
-const Instruction = union {
+const Instruction = union(enum) {
     cls: struct {
         opcode: u16,
     },
@@ -260,4 +301,81 @@ test "Decode DRAW" {
     try std.testing.expect(i.draw.registerX == 0xA);
     try std.testing.expect(i.draw.registerY == 0xB);
     try std.testing.expect(i.draw.height == 0xC);
+}
+
+test "Execute CLS" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var opcode: u16 = 0x00E0;
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    for (display.pixels[0..]) |*pixel| {
+        try std.testing.expect(pixel.* == 0);
+    }
+}
+
+test "Execute JMP" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var opcode: u16 = 0x1ABC;
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.pc == 0xABC);
+}
+
+test "Execute SETVX" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var opcode: u16 = 0x6ABC;
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xA] == 0xBC);
+}
+
+test "Execute ADDVX" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    c.v[0xA] = 0x01;
+    var opcode: u16 = 0x7ABC;
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xA] == 0xBC + 0x01);
+}
+
+test "Execute SETI" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var opcode: u16 = 0xAABC;
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.i == 0xABC);
+}
+
+test "Execute DRAW" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    // set up the display
+    for (display.pixels[0..]) |*pixel| {
+        pixel.* = 0;
+    }
+
+    // set up the memory
+    c.i = 0x200;
+    c.memory[c.i] = 0b10000000;
+
+    var opcode: u16 = 0xD001;
+    var i = try c.decode(opcode);
+    try c.execute(i);
+
+    // check the display
+    try std.testing.expect(display.pixels[0] == 0xFFFFFFFF);
+    try std.testing.expect(display.pixels[1] == 0);
+    try std.testing.expect(display.pixels[2] == 0);
 }

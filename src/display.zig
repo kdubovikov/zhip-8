@@ -3,8 +3,8 @@ const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
 
-const displayWidth = 64;
-const displayHeight = 32;
+pub const displayWidth = 64;
+pub const displayHeight = 32;
 
 pub const DisplayError = error{InitError};
 pub const PixelState = enum { on, off };
@@ -21,6 +21,7 @@ pub const Display = struct {
     renderer: *c.SDL_Renderer,
     screen: *c.SDL_Texture,
     pixels: [displayWidth * displayHeight * 4]u32,
+    should_quit: bool,
 
     const Self = @This();
 
@@ -47,7 +48,11 @@ pub const Display = struct {
             pixel.* = 0;
         }
 
-        return Self{ .window = window, .renderer = renderer, .screen = texture, .pixels = pixels };
+        return Self{ .should_quit = false, .window = window, .renderer = renderer, .screen = texture, .pixels = pixels };
+    }
+
+    pub fn shouldQuit(self: Self) bool {
+        return self.should_quit;
     }
 
     pub fn setPixel(self: *Self, x: usize, y: usize, state: PixelState) !void {
@@ -81,21 +86,19 @@ pub const Display = struct {
         }
     }
 
-    pub fn renderLoop(self: Self) !void {
-        mainloop: while (true) {
-            var sdl_event: c.SDL_Event = undefined;
-            while (c.SDL_PollEvent(&sdl_event) != 0) {
-                switch (sdl_event.type) {
-                    c.SDL_QUIT => break :mainloop,
-                    else => {},
-                }
+    pub fn renderLoop(self: *Self) !void {
+        var sdl_event: c.SDL_Event = undefined;
+        while (c.SDL_PollEvent(&sdl_event) != 0) {
+            switch (sdl_event.type) {
+                c.SDL_QUIT => self.should_quit = true,
+                else => {},
             }
-
-            try sdlErr(c.SDL_RenderClear(self.renderer));
-            try sdlErr(c.SDL_UpdateTexture(self.screen, null, self.pixels[0..].ptr, displayWidth * @sizeOf(u32)));
-            try sdlErr(c.SDL_RenderCopy(self.renderer, self.screen, null, null));
-            c.SDL_RenderPresent(self.renderer);
         }
+
+        try sdlErr(c.SDL_RenderClear(self.renderer));
+        try sdlErr(c.SDL_UpdateTexture(self.screen, null, self.pixels[0..].ptr, displayWidth * @sizeOf(u32)));
+        try sdlErr(c.SDL_RenderCopy(self.renderer, self.screen, null, null));
+        c.SDL_RenderPresent(self.renderer);
     }
 
     pub fn destroy(self: Self) void {
