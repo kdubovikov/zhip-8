@@ -1,5 +1,9 @@
 # ZHIP-8
+![ZHIP-8](screenshot.jpg)
+
 ZHIP-8 is a Chip-8 emulator written in Zig. Chip-8 is an interpreted programming language that was first used in the mid-1970s. It was initially used on 8-bit microcomputers and has since been ported to various systems.
+
+The specification was provided in this awesome guide by Tobias V. Langhoff: https://tobiasvl.github.io/blog/write-a-chip-8-emulator/
 
 # Features
 * Emulates the Chip-8 system
