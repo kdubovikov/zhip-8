@@ -55,12 +55,20 @@ pub const Display = struct {
         return self.should_quit;
     }
 
-    pub fn setPixel(self: *Self, x: usize, y: usize, state: PixelState) !void {
-        if ((x >= displayWidth) or (y >= displayHeight)) {
-            return error.InitError;
-        }
+    /// Set a pixel to on or off at the given coordinates and return the previous state.
+    pub fn setPixel(self: *Self, x: usize, y: usize) !bool {
+        var ret: bool = false;
 
-        self.pixels[y * displayWidth + x] = if (state == PixelState.on) 0xFFFFFFFF else 0x00000000;
+        // if ((x >= displayWidth) or (y >= displayHeight)) {
+        //     return error.InitError;
+        // }
+
+        const index: usize = y * displayWidth + x;
+        if (self.pixels[index] == 0xFFFFFFFF) {
+            ret = true;
+        }
+        self.pixels[index] = if (self.pixels[index] == 0) 0xFFFFFFFF else 0;
+        return ret;
     }
 
     /// Print all pixels to stdout.

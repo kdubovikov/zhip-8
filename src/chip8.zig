@@ -19,6 +19,7 @@ pub const Chip8 = struct {
     memory: [memSize]u8, // 4 KB
 
     const Self = @This();
+    const VF = 15; // VF is used as a flag by some instructions
 
     pub fn init(romPath: []const u8, display: *dsp.Display) !Self {
         var mem: [memSize]u8 = undefined;
@@ -145,8 +146,8 @@ pub const Chip8 = struct {
             .draw => |draw_struct| {
                 const x = self.v[draw_struct.registerX] & (dsp.displayWidth - 1);
                 const y = self.v[draw_struct.registerY] & (dsp.displayHeight - 1);
-                std.debug.print("drawing sprite at x: {}, y: {}\n", .{ x, y });
-                self.v[15] = 0; // VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that doesn't happen
+                // std.debug.print("drawing sprite at x: {}, y: {}\n", .{ x, y });
+                self.v[VF] = 0; // VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that doesn't happen
 
                 for (0..draw_struct.height) |row| {
                     const sprite = self.memory[self.i + row];
@@ -155,14 +156,11 @@ pub const Chip8 = struct {
                         const colByte = @as(u3, @truncate(col));
                         const shiftBy: u8 = 0x80;
                         const pixel = sprite & @as(u8, (shiftBy >> colByte));
-                        std.debug.print("pixel: {}\n", .{pixel});
                         if (pixel != 0) {
-                            const index: usize = (x + col + ((y + row) * dsp.displayWidth));
-                            if (self.display.pixels[index] == 0xFFFFFFFF) {
-                                self.v[15] = 1;
-                            }
-                            // self.display.pixels[index] ^= 1;
-                            self.display.pixels[index] = if (self.display.pixels[index] == 0) 0xFFFFFFFF else 0;
+                            const dspX = x + col;
+                            const dspY = y + row;
+                            const flipVF = try self.display.setPixel(dspX, dspY, @enumFromInt(pixel));
+                            self.v[VF] = if (flipVF) 1 else 0;
                         }
                     }
                 }
