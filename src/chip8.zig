@@ -4,6 +4,7 @@ const dsp = @import("display.zig");
 
 const memSize: usize = 4096; // 4 KB
 const memStart: usize = 0x200; // 512, the first 512 bytes are reserved for the interpreter
+const stackSize: usize = 16;
 
 pub const Chip8Error = error{InvalidInstruction};
 
@@ -12,6 +13,7 @@ pub const Chip8 = struct {
     i: u16, // index register
     v: [16]u8, // general purpose registers
     stack: [16]u16, // stack,
+    sp: u8, // stack pointer
     delayTimer: u8, // delay timer
     soundTimer: u8, // sound timer
     display: *dsp.Display,
@@ -37,6 +39,7 @@ pub const Chip8 = struct {
             .i = 0,
             .v = v,
             .stack = stack,
+            .sp = 0,
             .delayTimer = 0,
             .soundTimer = 0,
             .display = display,
@@ -74,54 +77,144 @@ pub const Chip8 = struct {
     // decode the instruction
     fn decode(self: *Self, opcode: u16) !Instruction {
         _ = self;
-        const nibble: u4 = @as(u4, @truncate(opcode >> 12));
+        // const nibble: u4 = @as(u4, @truncate(opcode >> 12));
+        // _ = nibble;
         const secondNibble: u4 = @as(u4, @truncate((opcode >> 8) & 0x0F));
         const thirdNibble: u4 = @as(u4, @truncate((opcode >> 4) & 0x0F));
         const fourthNibble: u4 = @as(u4, @truncate(opcode & 0x0F));
         const lastByte: u8 = @as(u8, @truncate(opcode & 0xFF));
         const address: u12 = @as(u12, @truncate(opcode & 0x0FFF));
 
-        switch (nibble) {
-            @intFromEnum(OpCodes.CLS) => {
-                return Instruction{ .cls = .{ .opcode = opcode } };
-            },
-            @intFromEnum(OpCodes.JMP) => {
-                return Instruction{ .jmp = .{
-                    .opcode = opcode,
-                    .address = address,
-                } };
-            },
-            @intFromEnum(OpCodes.SETVX) => {
-                return Instruction{ .setvx = .{
-                    .opcode = opcode,
-                    .register = secondNibble,
-                    .value = lastByte,
-                } };
-            },
-            @intFromEnum(OpCodes.ADDVX) => {
-                return Instruction{ .addvx = .{
-                    .opcode = opcode,
-                    .register = secondNibble,
-                    .value = lastByte,
-                } };
-            },
-            @intFromEnum(OpCodes.SETI) => {
-                return Instruction{ .seti = .{
-                    .opcode = opcode,
-                    .address = address,
-                } };
-            },
-            @intFromEnum(OpCodes.DRAW) => {
-                return Instruction{ .draw = .{
-                    .opcode = opcode,
-                    .registerX = secondNibble,
-                    .registerY = thirdNibble,
-                    .height = fourthNibble,
-                } };
-            },
-            else => {
-                return Chip8Error.InvalidInstruction;
-            },
+        const nibble = opcode & 0xF000;
+
+        if (opcode == @intFromEnum(OpCodes.CLS)) {
+            return Instruction{ .cls = .{ .opcode = opcode } };
+        } else if (nibble == @intFromEnum(OpCodes.JMP)) {
+            return Instruction{ .jmp = .{
+                .opcode = opcode,
+                .address = address,
+            } };
+        } else if (nibble == @intFromEnum(OpCodes.SETVX)) {
+            return Instruction{ .setvx = .{
+                .opcode = opcode,
+                .register = secondNibble,
+                .value = lastByte,
+            } };
+        } else if (nibble == @intFromEnum(OpCodes.ADDVX)) {
+            return Instruction{ .addvx = .{
+                .opcode = opcode,
+                .register = secondNibble,
+                .value = lastByte,
+            } };
+        } else if (nibble == @intFromEnum(OpCodes.SETI)) {
+            return Instruction{ .seti = .{
+                .opcode = opcode,
+                .address = address,
+            } };
+        } else if (nibble == @intFromEnum(OpCodes.DRAW)) {
+            return Instruction{ .draw = .{
+                .opcode = opcode,
+                .registerX = secondNibble,
+                .registerY = thirdNibble,
+                .height = fourthNibble,
+            } };
+        } else if (nibble == @intFromEnum(OpCodes.CALL)) {
+            return Instruction{ .call = .{
+                .opcode = opcode,
+                .address = address,
+            } };
+        } else if (opcode == @intFromEnum(OpCodes.RET)) {
+            return Instruction{ .ret = .{
+                .opcode = opcode,
+            } };
+        } else if (nibble == @intFromEnum(OpCodes.SKIP_IF_EQUAL)) {
+            return Instruction{ .skipIfEqual = .{
+                .opcode = opcode,
+                .register = secondNibble,
+                .value = lastByte,
+            } };
+        } else if (nibble == @intFromEnum(OpCodes.SKIP_IF_NOT_EQUAL)) {
+            return Instruction{ .skipIfNotEqual = .{
+                .opcode = opcode,
+                .register = secondNibble,
+                .value = lastByte,
+            } };
+        } else if (nibble == @intFromEnum(OpCodes.SKIP_IF_EQUAL_REGISTER)) {
+            return Instruction{ .skipIfEqualRegister = .{
+                .opcode = opcode,
+                .registerX = secondNibble,
+                .registerY = thirdNibble,
+            } };
+        } else if (nibble == @intFromEnum(OpCodes.SKIP_IF_NOT_EQUAL_REGISTER)) {
+            return Instruction{ .skipIfNotEqualRegister = .{
+                .opcode = opcode,
+                .registerX = secondNibble,
+                .registerY = thirdNibble,
+            } };
+        } else if (nibble == 0x8000) { // arithmetic
+            switch (fourthNibble) {
+                @intFromEnum(OpCodes.REGISTER_SET) => {
+                    return Instruction{ .registerSet = .{
+                        .opcode = opcode,
+                        .registerX = secondNibble,
+                        .registerY = thirdNibble,
+                    } };
+                },
+                @intFromEnum(OpCodes.AND) => {
+                    return Instruction{ .binaryAnd = .{
+                        .opcode = opcode,
+                        .registerX = secondNibble,
+                        .registerY = thirdNibble,
+                    } };
+                },
+                @intFromEnum(OpCodes.OR) => {
+                    return Instruction{ .binaryOr = .{
+                        .opcode = opcode,
+                        .registerX = secondNibble,
+                        .registerY = thirdNibble,
+                    } };
+                },
+                @intFromEnum(OpCodes.XOR) => {
+                    return Instruction{ .binaryXor = .{
+                        .opcode = opcode,
+                        .registerX = secondNibble,
+                        .registerY = thirdNibble,
+                    } };
+                },
+                @intFromEnum(OpCodes.ADD_REGISTER_NO_CARRY) => {
+                    return Instruction{ .addRegisterNoCarry = .{
+                        .opcode = opcode,
+                        .registerX = secondNibble,
+                        .registerY = thirdNibble,
+                    } };
+                },
+                @intFromEnum(OpCodes.SUBSTRACT_REGISTER_LR) => {
+                    return Instruction{ .substractRegister = .{
+                        .opcode = opcode,
+                        .registerX = secondNibble,
+                        .registerY = thirdNibble,
+                    } };
+                },
+                @intFromEnum(OpCodes.SUBSTRACT_REGISTER_RL) => {
+                    return Instruction{ .substractRegister = .{
+                        .opcode = opcode,
+                        .registerX = thirdNibble,
+                        .registerY = secondNibble,
+                    } };
+                },
+                @intFromEnum(OpCodes.SHIFT) => {
+                    return Instruction{ .shift = .{
+                        .opcode = opcode,
+                        .registerX = secondNibble,
+                        .registerY = thirdNibble,
+                    } };
+                },
+                else => {
+                    return Chip8Error.InvalidInstruction;
+                },
+            }
+        } else {
+            return Chip8Error.InvalidInstruction;
         }
     }
 
@@ -165,6 +258,29 @@ pub const Chip8 = struct {
                     }
                 }
             },
+            .call => |call_struct| {
+                if (self.sp >= stackSize) {
+                    std.debug.print("stack overflow\n", .{});
+                    return error.InitError;
+                }
+
+                self.stack[self.sp] = self.pc;
+                self.pc = call_struct.address;
+                self.sp += 1;
+            },
+            .ret => |ret_struct| {
+                _ = ret_struct;
+                if (self.sp == 0) {
+                    std.debug.print("stack underflow\n", .{});
+                    return error.InitError;
+                }
+
+                self.pc = self.stack[self.sp];
+                self.sp -= 1;
+            },
+            else => {
+                std.debug.print("unimplemented instruction\n", .{});
+            },
         }
     }
 };
@@ -175,13 +291,45 @@ pub fn combine(a: u8, b: u8) u16 {
 }
 
 /// CHIP-8 instructions
-const OpCodes = enum(u4) {
-    CLS = 0x0, // Clear the display
-    JMP = 0x1, // Jump to address
-    SETVX = 0x6, // Set VX to NN
-    ADDVX = 0x7, // Add NN to VX
-    SETI = 0xA, // Set index register I to NNN
-    DRAW = 0xD, // Draw sprite at VX, VY with height N
+const OpCodes = enum(u16) {
+    CLS = 0x00E0, // Clear the display
+    JMP = 0x1000, // Jump to address
+    SETVX = 0x6000, // Set VX to NN
+    ADDVX = 0x7000, // Add NN to VX
+    SETI = 0xA000, // Set index register I to NNN
+    DRAW = 0xD000, // Draw sprite at VX, VY with height N
+    CALL = 0x2000, // Call subroutine at NNN
+    RET = 0x00EE, // Return from subroutine
+    SKIP_IF_EQUAL = 0x3000, // Skip next instruction if VX == NN
+    SKIP_IF_NOT_EQUAL = 0x4000, // Skip next instruction if VX != NN
+    SKIP_IF_EQUAL_REGISTER = 0x5000, // Skip next instruction if VX == VY
+    SKIP_IF_NOT_EQUAL_REGISTER = 0x9000, // Skip next instruction if VX != VY
+
+    // arithmetic operations 4th nibble mask
+    REGISTER_SET = 0x0000, // Set VX to VY, or binary logic instructions
+    AND = 0x0001, // Set VX to VX & VY
+    OR = 0x0002, // Set VX to VX | VY
+    XOR = 0x0003, // Set VX to VX ^ VY
+    ADD_REGISTER_NO_CARRY = 0x0004, // Set VX to VX + VY, set VF to 1 if there is a carry, 0 otherwise
+    SUBSTRACT_REGISTER_LR = 0x0005, // Set VX to VX - VY, set VF to 0 if there is a borrow, 1 otherwise
+    SUBSTRACT_REGISTER_RL = 0x0007, // Set VX to VY - VX, set VF to 0 if there is a borrow, 1 otherwise
+    SHIFT = 0x0006, // Set VX to VY >> 1, set VF to least significant bit of VY before shift
+    SHIFT_LEFT = 0x000E, // Set VX to VY << 1, set VF to most significant bit of VY before shift
+    // end arithmetic operations
+
+    JUMP_WITH_OFFSET = 0xB000, // Jump to address NNN + V0
+    RND = 0xC000, // Set VX to random number & NN
+    SKIP_IF_KEY_PRESSED = 0xE09E, // Skip next instruction if key with value VX is pressed
+    SKIP_IF_KEY_NOT_PRESSED = 0xE0A1, // Skip next instruction if key with value VX is not pressed
+    GET_TIMER = 0xF007, // Set VX to value of delay timer
+    SET_TIMER = 0xF015, // Set delay timer to VX
+    SET_SOUND_TIMER = 0xF018, // Set sound timer to VX
+    ADDI = 0xF01E, // Set I to I + VX
+    GET_KEY = 0xF00A, // Wait for key press and store in VX
+    FONT_CHARACTER = 0xF029, // Set I to location of sprite for character in VX
+    DECIMAL = 0xF033, // Store BCD representation of VX in memory locations I, I+1, and I+2
+    STORE_MEMORY = 0xF055, // Store registers V0 through VX in memory starting at location I
+    LOAD_MEMORY = 0xF065, // Read registers V0 through VX from memory starting at location I
 };
 
 const Instruction = union(enum) {
@@ -211,6 +359,127 @@ const Instruction = union(enum) {
         registerX: u4,
         registerY: u4,
         height: u4,
+    },
+    call: struct {
+        opcode: u16,
+        address: u12,
+    },
+    ret: struct {
+        opcode: u16,
+    },
+    skipIfEqual: struct {
+        opcode: u16,
+        register: u4,
+        value: u8,
+    },
+    skipIfNotEqual: struct {
+        opcode: u16,
+        register: u4,
+        value: u8,
+    },
+    skipIfEqualRegister: struct {
+        opcode: u16,
+        registerX: u4,
+        registerY: u4,
+    },
+    skipIfNotEqualRegister: struct {
+        opcode: u16,
+        registerX: u4,
+        registerY: u4,
+    },
+    registerSet: struct {
+        opcode: u16,
+        registerX: u4,
+        registerY: u4,
+    },
+    binaryOr: struct {
+        opcode: u16,
+        registerX: u4,
+        registerY: u4,
+    },
+    binaryAnd: struct {
+        opcode: u16,
+        registerX: u4,
+        registerY: u4,
+    },
+    binaryXor: struct {
+        opcode: u16,
+        registerX: u4,
+        registerY: u4,
+    },
+    addRegisterNoCarry: struct {
+        opcode: u16,
+        registerX: u4,
+        registerY: u4,
+    },
+    substractRegister: struct {
+        opcode: u16,
+        registerX: u4,
+        registerY: u4,
+
+        const Self = @This();
+        pub fn xFirst(self: Self) bool {
+            return self.opcode & 0x0005 == true;
+        }
+    },
+    shift: struct {
+        opcode: u16,
+        registerX: u4,
+        registerY: u4,
+
+        const Self = @This();
+        pub fn right(self: Self) bool {
+            return self.opcode & 0x0006 == 0x0006;
+        }
+    },
+    jumpWithOffset: struct {
+        opcode: u16,
+        register: u4,
+    },
+    random: struct {
+        opcode: u16,
+        register: u4,
+        value: u8,
+    },
+    skipIfKeyPressed: struct {
+        opcode: u16,
+        register: u4,
+    },
+    getDelayTimer: struct {
+        opcode: u16,
+        register: u4,
+    },
+    setDelayTimer: struct {
+        opcode: u16,
+        register: u4,
+    },
+    setSoundTimer: struct {
+        opcode: u16,
+        register: u4,
+    },
+    addI: struct {
+        opcode: u16,
+        register: u4,
+    },
+    getKey: struct {
+        opcode: u16,
+        register: u4,
+    },
+    fontCharacter: struct {
+        opcode: u16,
+        register: u4,
+    },
+    binaryCodedDecimal: struct {
+        opcode: u16,
+        register: u4,
+    },
+    storeMemory: struct {
+        opcode: u16,
+        register: u4,
+    },
+    loadMemory: struct {
+        opcode: u16,
+        register: u4,
     },
 };
 
@@ -301,6 +570,175 @@ test "Decode DRAW" {
     try std.testing.expect(i.draw.height == 0xC);
 }
 
+test "Decode CALL" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    var opcode: u16 = 0x2ABC;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.call.opcode == opcode);
+    try std.testing.expect(i.call.address == 0xABC);
+}
+
+test "Decode RET" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    var opcode: u16 = 0x00EE;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.ret.opcode == opcode);
+}
+
+test "Decode SKIP_IF_EQUAL" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    var opcode: u16 = 0x3ABC;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.skipIfEqual.opcode == opcode);
+    try std.testing.expect(i.skipIfEqual.register == 0xA);
+    try std.testing.expect(i.skipIfEqual.value == 0xBC);
+}
+
+test "Decode SKIP_IF_NOT_EQUAL" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    var opcode: u16 = 0x4ABC;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.skipIfNotEqual.opcode == opcode);
+    try std.testing.expect(i.skipIfNotEqual.register == 0xA);
+    try std.testing.expect(i.skipIfNotEqual.value == 0xBC);
+}
+
+test "Decode SKIP_IF_EQUAL_REGISTER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    var opcode: u16 = 0x5AB0;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.skipIfEqualRegister.opcode == opcode);
+    try std.testing.expect(i.skipIfEqualRegister.registerX == 0xA);
+    try std.testing.expect(i.skipIfEqualRegister.registerY == 0xB);
+}
+
+test "Decode SKIP_IF_NOT_EQUAL_REGISTER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    var opcode: u16 = 0x9AB0;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.skipIfNotEqualRegister.opcode == opcode);
+    try std.testing.expect(i.skipIfNotEqualRegister.registerX == 0xA);
+    try std.testing.expect(i.skipIfNotEqualRegister.registerY == 0xB);
+}
+
+test "Decode REGISTER_SET" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    var opcode: u16 = 0x8AB0;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.registerSet.opcode == opcode);
+    try std.testing.expect(i.registerSet.registerX == 0xA);
+    try std.testing.expect(i.registerSet.registerY == 0xB);
+}
+
+test "Decode AND" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    // 0x8AB1
+    var opcode: u16 = 0x8AB1;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.binaryAnd.opcode == opcode);
+    try std.testing.expect(i.binaryAnd.registerX == 0xA);
+    try std.testing.expect(i.binaryAnd.registerY == 0xB);
+}
+
+test "Decode OR" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    // 0x8AB2
+    var opcode: u16 = 0x8AB2;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.binaryOr.opcode == opcode);
+    try std.testing.expect(i.binaryOr.registerX == 0xA);
+    try std.testing.expect(i.binaryOr.registerY == 0xB);
+}
+
+test "Decode XOR" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    // 0x8AB3
+    var opcode: u16 = 0x8AB3;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.binaryXor.opcode == opcode);
+    try std.testing.expect(i.binaryXor.registerX == 0xA);
+    try std.testing.expect(i.binaryXor.registerY == 0xB);
+}
+
+test "Decode ADD_REGISTER_NO_CARRY" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    // 0x8AB4
+    var opcode: u16 = 0x8AB4;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.addRegisterNoCarry.opcode == opcode);
+    try std.testing.expect(i.addRegisterNoCarry.registerX == 0xA);
+    try std.testing.expect(i.addRegisterNoCarry.registerY == 0xB);
+}
+
+test "Decode SUBSTRACT_REGISTER_LR" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    // 0x8AB5
+    var opcode: u16 = 0x8AB5;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.substractRegister.opcode == opcode);
+    try std.testing.expect(i.substractRegister.registerX == 0xA);
+    try std.testing.expect(i.substractRegister.registerY == 0xB);
+}
+
+test "Decode SUBSTRACT_REGISTER_RL" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    // 0x8BA5
+    var opcode: u16 = 0x8BA5;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.substractRegister.opcode == opcode);
+    try std.testing.expect(i.substractRegister.registerX == 0xB);
+    try std.testing.expect(i.substractRegister.registerY == 0xA);
+}
+
+test "Decode SHIFT" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    // 0x8AB6
+    var opcode: u16 = 0x8AB6;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.shift.opcode == opcode);
+    try std.testing.expect(i.shift.registerX == 0xA);
+    try std.testing.expect(i.shift.registerY == 0xB);
+    try std.testing.expect(i.shift.right() == true);
+}
+
 test "Execute CLS" {
     var display = try dsp.Display.init();
     defer display.destroy();
@@ -376,4 +814,16 @@ test "Execute DRAW" {
     try std.testing.expect(display.pixels[0] == 0xFFFFFFFF);
     try std.testing.expect(display.pixels[1] == 0);
     try std.testing.expect(display.pixels[2] == 0);
+}
+
+test "Execute CALL" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    var opcode: u16 = 0x2ABC;
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.pc == 0xABC);
+    try std.testing.expect(c.stack[0] == 0x200);
 }
