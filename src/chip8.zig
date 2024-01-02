@@ -203,7 +203,14 @@ pub const Chip8 = struct {
                     } };
                 },
                 @intFromEnum(OpCodes.SHIFT) => {
-                    return Instruction{ .shift = .{
+                    return Instruction{ .shift_right = .{
+                        .opcode = opcode,
+                        .registerX = secondNibble,
+                        .registerY = thirdNibble,
+                    } };
+                },
+                @intFromEnum(OpCodes.SHIFT_LEFT) => {
+                    return Instruction{ .shift_left = .{
                         .opcode = opcode,
                         .registerX = secondNibble,
                         .registerY = thirdNibble,
@@ -422,15 +429,15 @@ const Instruction = union(enum) {
             return self.opcode & 0x0005 == true;
         }
     },
-    shift: struct {
+    shift_right: struct {
         opcode: u16,
         registerX: u4,
         registerY: u4,
-
-        const Self = @This();
-        pub fn right(self: Self) bool {
-            return self.opcode & 0x0006 == 0x0006;
-        }
+    },
+    shift_left: struct {
+        opcode: u16,
+        registerX: u4,
+        registerY: u4,
     },
     jumpWithOffset: struct {
         opcode: u16,
@@ -733,10 +740,21 @@ test "Decode SHIFT" {
     // 0x8AB6
     var opcode: u16 = 0x8AB6;
     var i = try c.decode(opcode);
-    try std.testing.expect(i.shift.opcode == opcode);
-    try std.testing.expect(i.shift.registerX == 0xA);
-    try std.testing.expect(i.shift.registerY == 0xB);
-    try std.testing.expect(i.shift.right() == true);
+    try std.testing.expect(i.shift_right.opcode == opcode);
+    try std.testing.expect(i.shift_right.registerX == 0xA);
+    try std.testing.expect(i.shift_right.registerY == 0xB);
+}
+
+test "Decode SHIFT_LEFT" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    // 0x8ABE
+    var opcode: u16 = 0x8ABE;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.shift_left.opcode == opcode);
+    try std.testing.expect(i.shift_left.registerX == 0xA);
+    try std.testing.expect(i.shift_left.registerY == 0xB);
 }
 
 test "Execute CLS" {
