@@ -233,6 +233,7 @@ pub const Chip8 = struct {
             },
             .jmp => |jmp_struct| {
                 self.pc = jmp_struct.address;
+                return;
             },
             .setvx => |setvx_struct| {
                 self.v[setvx_struct.register] = setvx_struct.value;
@@ -274,6 +275,7 @@ pub const Chip8 = struct {
                 self.stack[self.sp] = self.pc;
                 self.pc = call_struct.address;
                 self.sp += 1;
+                return;
             },
             .ret => |ret_struct| {
                 _ = ret_struct;
@@ -284,11 +286,23 @@ pub const Chip8 = struct {
 
                 self.pc = self.stack[self.sp];
                 self.sp -= 1;
+                return;
             },
             else => {
                 std.debug.print("unimplemented instruction\n", .{});
             },
+            .skipIfEqual => |skip_if_equal_struct| {
+                if (self.v[skip_if_equal_struct.register] == skip_if_equal_struct.value) {
+                    self.pc += 2;
+                }
+            },
+            .skipIfNotEqual => |skip_if_not_equal_struct| {
+                if (self.v[skip_if_not_equal_struct.register] != skip_if_not_equal_struct.value) {
+                    self.pc += 2;
+                }
+            },
         }
+        self.pc += 2;
     }
 };
 
@@ -844,4 +858,60 @@ test "Execute CALL" {
     try c.execute(i);
     try std.testing.expect(c.pc == 0xABC);
     try std.testing.expect(c.stack[0] == 0x200);
+}
+
+test "Execute RET" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    c.stack[1] = 0xABC;
+    c.sp = 1;
+
+    var opcode: u16 = 0x00EE;
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.pc == 0xABC);
+    try std.testing.expect(c.sp == 0);
+}
+
+test "Execute SKIP_IF_EQUAL" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    c.v[0xA] = 0xBC;
+
+    var opcode: u16 = 0x3ABC;
+    var i = try c.decode(opcode);
+    try c.execute(i);
+
+    // std.log.info("\n------------pc: {}\n", .{c.pc});
+    try std.testing.expectEqual(c.pc, 0x204);
+
+    c.pc = 0x200;
+    c.v[0xA] = 0xAB;
+    try c.execute(i);
+    try std.testing.expectEqual(c.pc, 0x202);
+}
+
+test "Execute SKIP_IF_NOT_EQUAL" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+
+    c.v[0xA] = 0xBC;
+
+    var opcode: u16 = 0x4ABC;
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.pc == 0x202);
+
+    c.v[0xA] = 0xAB;
+    try c.execute(i);
+    try std.testing.expect(c.pc == 0x206);
+
+    c.v[0xA] = 0xBC;
+    try c.execute(i);
+    try std.testing.expect(c.pc == 0x208);
 }
