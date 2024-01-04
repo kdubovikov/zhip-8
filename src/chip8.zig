@@ -23,7 +23,7 @@ pub const Chip8 = struct {
     const Self = @This();
     const VF = 15; // VF is used as a flag by some instructions
 
-    pub fn init(romPath: []const u8, display: *dsp.Display) !Self {
+    pub fn init(display: *dsp.Display) !Self {
         var mem: [memSize]u8 = undefined;
         // clear memory
         for (mem[0..]) |*byte| {
@@ -45,6 +45,11 @@ pub const Chip8 = struct {
             .display = display,
         };
 
+        return ret;
+    }
+
+    pub fn initWithRom(romPath: []const u8, display: *dsp.Display) !Self {
+        var ret = try Self.init(display);
         // load rom
         var r = try rom.Rom.load(romPath);
         ret.loadRom(r);
@@ -53,8 +58,12 @@ pub const Chip8 = struct {
 
     /// Load a ROM into memory
     pub fn loadRom(self: *Self, r: rom.Rom) void {
+        self.loadFromBytes(r.data);
+    }
+
+    pub fn loadFromBytes(self: *Self, bytes: []const u8) void {
         var pc = memStart;
-        for (r.data[0..]) |*byte| {
+        for (bytes[0..]) |*byte| {
             self.memory[pc] = byte.*;
             pc += 1;
         }
@@ -517,10 +526,22 @@ test "combine bytes" {
     try std.testing.expect(c == 0x1234);
 }
 
+test "Load commands from bytes" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    var bytes = [_]u8{ 0x12, 0x34, 0x56, 0x78 };
+    c.loadFromBytes(&bytes);
+    try std.testing.expectEqual(c.memory[0x200], 0x12);
+    try std.testing.expectEqual(c.memory[0x201], 0x34);
+    try std.testing.expectEqual(c.memory[0x202], 0x56);
+    try std.testing.expectEqual(c.memory[0x203], 0x78);
+}
+
 test "Load ROM and check memory contents" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.initWithRom("roms/IBM Logo.ch8", &display);
     var r = try rom.Rom.load("roms/IBM Logo.ch8");
     for (r.data[0..]) |*byte| {
         try std.testing.expect(byte.* == c.memory[c.pc]);
@@ -531,7 +552,7 @@ test "Load ROM and check memory contents" {
 test "Decode CLS" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     var opcode: u16 = 0x00E0;
     var i = try c.decode(opcode);
     try std.testing.expect(i.cls.opcode == opcode);
@@ -540,7 +561,7 @@ test "Decode CLS" {
 test "Decode JMP" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     var opcode: u16 = 0x1ABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.jmp.opcode == opcode);
@@ -550,7 +571,7 @@ test "Decode JMP" {
 test "Decode SETVX" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     var opcode: u16 = 0x6ABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.setvx.opcode == opcode);
@@ -561,7 +582,7 @@ test "Decode SETVX" {
 test "Decode ADDVX" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     var opcode: u16 = 0x7ABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.addvx.opcode == opcode);
@@ -572,7 +593,7 @@ test "Decode ADDVX" {
 test "Decode SETI" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     var opcode: u16 = 0xAABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.seti.opcode == opcode);
@@ -582,7 +603,7 @@ test "Decode SETI" {
 test "Decode DRAW" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     var opcode: u16 = 0xDABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.draw.opcode == opcode);
@@ -594,7 +615,7 @@ test "Decode DRAW" {
 test "Decode CALL" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     var opcode: u16 = 0x2ABC;
     var i = try c.decode(opcode);
@@ -605,7 +626,7 @@ test "Decode CALL" {
 test "Decode RET" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     var opcode: u16 = 0x00EE;
     var i = try c.decode(opcode);
@@ -615,7 +636,7 @@ test "Decode RET" {
 test "Decode SKIP_IF_EQUAL" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     var opcode: u16 = 0x3ABC;
     var i = try c.decode(opcode);
@@ -627,7 +648,7 @@ test "Decode SKIP_IF_EQUAL" {
 test "Decode SKIP_IF_NOT_EQUAL" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     var opcode: u16 = 0x4ABC;
     var i = try c.decode(opcode);
@@ -639,7 +660,7 @@ test "Decode SKIP_IF_NOT_EQUAL" {
 test "Decode SKIP_IF_EQUAL_REGISTER" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     var opcode: u16 = 0x5AB0;
     var i = try c.decode(opcode);
@@ -651,7 +672,7 @@ test "Decode SKIP_IF_EQUAL_REGISTER" {
 test "Decode SKIP_IF_NOT_EQUAL_REGISTER" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     var opcode: u16 = 0x9AB0;
     var i = try c.decode(opcode);
@@ -663,7 +684,7 @@ test "Decode SKIP_IF_NOT_EQUAL_REGISTER" {
 test "Decode REGISTER_SET" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     var opcode: u16 = 0x8AB0;
     var i = try c.decode(opcode);
@@ -675,7 +696,7 @@ test "Decode REGISTER_SET" {
 test "Decode AND" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     // 0x8AB1
     var opcode: u16 = 0x8AB1;
@@ -688,7 +709,7 @@ test "Decode AND" {
 test "Decode OR" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     // 0x8AB2
     var opcode: u16 = 0x8AB2;
@@ -701,7 +722,7 @@ test "Decode OR" {
 test "Decode XOR" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     // 0x8AB3
     var opcode: u16 = 0x8AB3;
@@ -714,7 +735,7 @@ test "Decode XOR" {
 test "Decode ADD_REGISTER_NO_CARRY" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     // 0x8AB4
     var opcode: u16 = 0x8AB4;
     var i = try c.decode(opcode);
@@ -726,7 +747,7 @@ test "Decode ADD_REGISTER_NO_CARRY" {
 test "Decode SUBSTRACT_REGISTER_LR" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     // 0x8AB5
     var opcode: u16 = 0x8AB5;
     var i = try c.decode(opcode);
@@ -738,7 +759,7 @@ test "Decode SUBSTRACT_REGISTER_LR" {
 test "Decode SUBSTRACT_REGISTER_RL" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     // 0x8BA5
     var opcode: u16 = 0x8BA5;
     var i = try c.decode(opcode);
@@ -750,7 +771,7 @@ test "Decode SUBSTRACT_REGISTER_RL" {
 test "Decode SHIFT" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     // 0x8AB6
     var opcode: u16 = 0x8AB6;
     var i = try c.decode(opcode);
@@ -762,7 +783,7 @@ test "Decode SHIFT" {
 test "Decode SHIFT_LEFT" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     // 0x8ABE
     var opcode: u16 = 0x8ABE;
     var i = try c.decode(opcode);
@@ -774,7 +795,7 @@ test "Decode SHIFT_LEFT" {
 test "Execute CLS" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     var opcode: u16 = 0x00E0;
     var i = try c.decode(opcode);
     try c.execute(i);
@@ -786,7 +807,7 @@ test "Execute CLS" {
 test "Execute JMP" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     var opcode: u16 = 0x1ABC;
     var i = try c.decode(opcode);
     try c.execute(i);
@@ -796,7 +817,7 @@ test "Execute JMP" {
 test "Execute SETVX" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     var opcode: u16 = 0x6ABC;
     var i = try c.decode(opcode);
     try c.execute(i);
@@ -806,7 +827,7 @@ test "Execute SETVX" {
 test "Execute ADDVX" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     c.v[0xA] = 0x01;
     var opcode: u16 = 0x7ABC;
     var i = try c.decode(opcode);
@@ -817,7 +838,7 @@ test "Execute ADDVX" {
 test "Execute SETI" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
     var opcode: u16 = 0xAABC;
     var i = try c.decode(opcode);
     try c.execute(i);
@@ -827,7 +848,7 @@ test "Execute SETI" {
 test "Execute DRAW" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     // set up the display
     for (display.pixels[0..]) |*pixel| {
@@ -851,7 +872,7 @@ test "Execute DRAW" {
 test "Execute CALL" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     var opcode: u16 = 0x2ABC;
     var i = try c.decode(opcode);
@@ -863,7 +884,7 @@ test "Execute CALL" {
 test "Execute RET" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     c.stack[1] = 0xABC;
     c.sp = 1;
@@ -878,7 +899,7 @@ test "Execute RET" {
 test "Execute SKIP_IF_EQUAL" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     c.v[0xA] = 0xBC;
 
@@ -886,7 +907,6 @@ test "Execute SKIP_IF_EQUAL" {
     var i = try c.decode(opcode);
     try c.execute(i);
 
-    // std.log.info("\n------------pc: {}\n", .{c.pc});
     try std.testing.expectEqual(c.pc, 0x204);
 
     c.pc = 0x200;
@@ -898,7 +918,7 @@ test "Execute SKIP_IF_EQUAL" {
 test "Execute SKIP_IF_NOT_EQUAL" {
     var display = try dsp.Display.init();
     defer display.destroy();
-    var c = try Chip8.init("roms/IBM Logo.ch8", &display);
+    var c = try Chip8.init(&display);
 
     c.v[0xA] = 0xBC;
 
