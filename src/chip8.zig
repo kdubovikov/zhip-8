@@ -343,9 +343,9 @@ pub const Chip8 = struct {
                 self.v[binary_xor_struct.registerX] ^= self.v[binary_xor_struct.registerY];
             },
             .addRegisterNoCarry => |add_register_no_carry_struct| {
-                const sum = self.v[add_register_no_carry_struct.registerX] + self.v[add_register_no_carry_struct.registerY];
-                self.v[add_register_no_carry_struct.registerX] = sum;
-                self.v[VF] = if (sum > 0xFF) 1 else 0;
+                const sum = @addWithOverflow(self.v[add_register_no_carry_struct.registerX], self.v[add_register_no_carry_struct.registerY]);
+                self.v[add_register_no_carry_struct.registerX] = sum[0];
+                self.v[VF] = sum[1];
             },
             .substractRegister => |substract_register_struct| {
                 const x = self.v[substract_register_struct.registerX];
@@ -354,12 +354,12 @@ pub const Chip8 = struct {
                 self.v[VF] = if (x > y) 1 else 0;
             },
             .shiftRight => |shift_struct| {
-                self.v[shift_struct.registerX] = self.v[shift_struct.registerY] >> 1;
                 self.v[VF] = self.v[shift_struct.registerY] & 0x1;
+                self.v[shift_struct.registerX] = self.v[shift_struct.registerY] >> 1;
             },
             .shiftLeft => |shift_left_struct| {
-                self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerY] << 1;
                 self.v[VF] = self.v[shift_left_struct.registerY] >> 7;
+                self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerY] << 1;
             },
         }
     }
@@ -496,11 +496,6 @@ const Instruction = union(enum) {
         opcode: u16,
         registerX: u4,
         registerY: u4,
-
-        // const Self = @This();
-        // pub fn xFirst(self: Self) bool {
-        //     return self.opcode & 0x0005 == true;
-        // }
     },
     shiftRight: struct {
         opcode: u16,
@@ -992,4 +987,188 @@ test "Execute SKIP_IF_NOT_EQUAL" {
     opcode = c.fetch();
     try c.execute(i);
     try std.testing.expect(c.pc == 0x204);
+}
+
+test "Execute SKIP_IF_EQUAL_REGISTER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 0xBC;
+    c.v[0xB] = 0xBC;
+    var program = &[_]u16{0x5AB0};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.pc == 0x204);
+
+    c.v[0xA] = 0xBC;
+    c.v[0xB] = 0xAB;
+    c.pc = 0x200;
+    c.loadFromArray(program);
+    opcode = c.fetch();
+    try c.execute(i);
+    try std.testing.expect(c.pc == 0x202);
+}
+
+test "Execute SKIP_IF_NOT_EQUAL_REGISTER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 0xBC;
+    c.v[0xB] = 0xBC;
+    var program = &[_]u16{0x9AB0};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.pc == 0x202);
+
+    c.v[0xA] = 0xBC;
+    c.v[0xB] = 0xAB;
+    c.pc = 0x200;
+    c.loadFromArray(program);
+    opcode = c.fetch();
+    try c.execute(i);
+    try std.testing.expect(c.pc == 0x204);
+}
+
+test "Execute REGISTER_SET" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 0xBC;
+    c.v[0xB] = 0xAB;
+    var program = &[_]u16{0x8AB0};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xA] == c.v[0xB]);
+}
+
+test "Execute BINARY_AND" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 0b10101010;
+    c.v[0xB] = 0b11110000;
+    var program = &[_]u16{0x8AB1};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xA] == 0b10100000);
+}
+
+test "Execute BINARY_OR" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 0b10101010;
+    c.v[0xB] = 0b11110000;
+    var program = &[_]u16{0x8AB2};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xA] == 0b11111010);
+}
+
+test "Execute BINARY_XOR" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 0b10101010;
+    c.v[0xB] = 0b11110000;
+    var program = &[_]u16{0x8AB3};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xA] == 0b01011010);
+}
+
+test "Execute ADD_REGISTER_NO_CARRY" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 0xFF;
+    c.v[0xB] = 0x01;
+    var program = &[_]u16{0x8AB4};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xA] == 0x00);
+    try std.testing.expect(c.v[0xF] == 1);
+}
+
+test "Execute SUBSTRACT_LR" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 10;
+    c.v[0xB] = 5;
+    var program = &[_]u16{0x8AB5};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xA] == 5);
+    try std.testing.expect(c.v[0xF] == 1);
+}
+
+test "Execute SUBSTRACT_RL" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 5;
+    c.v[0xB] = 10;
+    var program = &[_]u16{0x8BA5};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xB] == 5);
+    try std.testing.expect(c.v[0xF] == 1);
+}
+
+test "Execute SHIFT_RIGHT" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xB] = 0b10101010;
+    var program = &[_]u16{0x8BB6};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xB] == 0b01010101);
+    try std.testing.expect(c.v[0xF] == 0);
+}
+
+test "Execute SHIFT_LEFT" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xB] = 0b10101010;
+    var program = &[_]u16{0x8BBE};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xB] == 0b01010100);
+    try std.testing.expect(c.v[0xF] == 1);
 }
