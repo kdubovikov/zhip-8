@@ -61,6 +61,16 @@ pub const Chip8 = struct {
         self.loadFromBytes(r.data);
     }
 
+    pub fn loadFromArray(self: *Self, bytes: []const u16) void {
+        var pc = memStart;
+        for (bytes[0..]) |*byte| {
+            // load next 2 instructions from byte to memory and increment pc
+            self.memory[pc] = @as(u8, @truncate(byte.* >> 8));
+            self.memory[pc + 1] = @as(u8, @truncate(byte.* & 0xFF));
+            pc += 2;
+        }
+    }
+
     pub fn loadFromBytes(self: *Self, bytes: []const u8) void {
         var pc = memStart;
         for (bytes[0..]) |*byte| {
@@ -212,14 +222,14 @@ pub const Chip8 = struct {
                     } };
                 },
                 @intFromEnum(OpCodes.SHIFT) => {
-                    return Instruction{ .shift_right = .{
+                    return Instruction{ .shiftRight = .{
                         .opcode = opcode,
                         .registerX = secondNibble,
                         .registerY = thirdNibble,
                     } };
                 },
                 @intFromEnum(OpCodes.SHIFT_LEFT) => {
-                    return Instruction{ .shift_left = .{
+                    return Instruction{ .shiftLeft = .{
                         .opcode = opcode,
                         .registerX = secondNibble,
                         .registerY = thirdNibble,
@@ -310,8 +320,48 @@ pub const Chip8 = struct {
                     self.pc += 2;
                 }
             },
+            .skipIfEqualRegister => |skip_if_equal_register_struct| {
+                if (self.v[skip_if_equal_register_struct.registerX] == self.v[skip_if_equal_register_struct.registerY]) {
+                    self.pc += 2;
+                }
+            },
+            .skipIfNotEqualRegister => |skip_if_not_equal_register_struct| {
+                if (self.v[skip_if_not_equal_register_struct.registerX] != self.v[skip_if_not_equal_register_struct.registerY]) {
+                    self.pc += 2;
+                }
+            },
+            .registerSet => |register_set_struct| {
+                self.v[register_set_struct.registerX] = self.v[register_set_struct.registerY];
+            },
+            .binaryAnd => |binary_and_struct| {
+                self.v[binary_and_struct.registerX] &= self.v[binary_and_struct.registerY];
+            },
+            .binaryOr => |binary_or_struct| {
+                self.v[binary_or_struct.registerX] |= self.v[binary_or_struct.registerY];
+            },
+            .binaryXor => |binary_xor_struct| {
+                self.v[binary_xor_struct.registerX] ^= self.v[binary_xor_struct.registerY];
+            },
+            .addRegisterNoCarry => |add_register_no_carry_struct| {
+                const sum = self.v[add_register_no_carry_struct.registerX] + self.v[add_register_no_carry_struct.registerY];
+                self.v[add_register_no_carry_struct.registerX] = sum;
+                self.v[VF] = if (sum > 0xFF) 1 else 0;
+            },
+            .substractRegister => |substract_register_struct| {
+                const x = self.v[substract_register_struct.registerX];
+                const y = self.v[substract_register_struct.registerY];
+                self.v[substract_register_struct.registerX] = x - y;
+                self.v[VF] = if (x > y) 1 else 0;
+            },
+            .shiftRight => |shift_struct| {
+                self.v[shift_struct.registerX] = self.v[shift_struct.registerY] >> 1;
+                self.v[VF] = self.v[shift_struct.registerY] & 0x1;
+            },
+            .shiftLeft => |shift_left_struct| {
+                self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerY] << 1;
+                self.v[VF] = self.v[shift_left_struct.registerY] >> 7;
+            },
         }
-        self.pc += 2;
     }
 };
 
@@ -447,17 +497,17 @@ const Instruction = union(enum) {
         registerX: u4,
         registerY: u4,
 
-        const Self = @This();
-        pub fn xFirst(self: Self) bool {
-            return self.opcode & 0x0005 == true;
-        }
+        // const Self = @This();
+        // pub fn xFirst(self: Self) bool {
+        //     return self.opcode & 0x0005 == true;
+        // }
     },
-    shift_right: struct {
+    shiftRight: struct {
         opcode: u16,
         registerX: u4,
         registerY: u4,
     },
-    shift_left: struct {
+    shiftLeft: struct {
         opcode: u16,
         registerX: u4,
         registerY: u4,
@@ -662,7 +712,10 @@ test "Decode SKIP_IF_EQUAL_REGISTER" {
     defer display.destroy();
     var c = try Chip8.init(&display);
 
-    var opcode: u16 = 0x5AB0;
+    var program = &[_]u16{0x5AB0};
+    c.loadFromArray(program);
+
+    var opcode = c.fetch();
     var i = try c.decode(opcode);
     try std.testing.expect(i.skipIfEqualRegister.opcode == opcode);
     try std.testing.expect(i.skipIfEqualRegister.registerX == 0xA);
@@ -775,9 +828,9 @@ test "Decode SHIFT" {
     // 0x8AB6
     var opcode: u16 = 0x8AB6;
     var i = try c.decode(opcode);
-    try std.testing.expect(i.shift_right.opcode == opcode);
-    try std.testing.expect(i.shift_right.registerX == 0xA);
-    try std.testing.expect(i.shift_right.registerY == 0xB);
+    try std.testing.expect(i.shiftRight.opcode == opcode);
+    try std.testing.expect(i.shiftRight.registerX == 0xA);
+    try std.testing.expect(i.shiftRight.registerY == 0xB);
 }
 
 test "Decode SHIFT_LEFT" {
@@ -787,9 +840,9 @@ test "Decode SHIFT_LEFT" {
     // 0x8ABE
     var opcode: u16 = 0x8ABE;
     var i = try c.decode(opcode);
-    try std.testing.expect(i.shift_left.opcode == opcode);
-    try std.testing.expect(i.shift_left.registerX == 0xA);
-    try std.testing.expect(i.shift_left.registerY == 0xB);
+    try std.testing.expect(i.shiftLeft.opcode == opcode);
+    try std.testing.expect(i.shiftLeft.registerX == 0xA);
+    try std.testing.expect(i.shiftLeft.registerY == 0xB);
 }
 
 test "Execute CLS" {
@@ -903,7 +956,10 @@ test "Execute SKIP_IF_EQUAL" {
 
     c.v[0xA] = 0xBC;
 
-    var opcode: u16 = 0x3ABC;
+    // var opcode: u16 = 0x3ABC;
+    var program = &[_]u16{0x3ABC};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
     var i = try c.decode(opcode);
     try c.execute(i);
 
@@ -911,6 +967,8 @@ test "Execute SKIP_IF_EQUAL" {
 
     c.pc = 0x200;
     c.v[0xA] = 0xAB;
+    c.loadFromArray(program);
+    opcode = c.fetch();
     try c.execute(i);
     try std.testing.expectEqual(c.pc, 0x202);
 }
@@ -921,17 +979,17 @@ test "Execute SKIP_IF_NOT_EQUAL" {
     var c = try Chip8.init(&display);
 
     c.v[0xA] = 0xBC;
-
-    var opcode: u16 = 0x4ABC;
+    var program = &[_]u16{0x4ABC};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
     var i = try c.decode(opcode);
     try c.execute(i);
     try std.testing.expect(c.pc == 0x202);
 
     c.v[0xA] = 0xAB;
+    c.pc = 0x200;
+    c.loadFromArray(program);
+    opcode = c.fetch();
     try c.execute(i);
-    try std.testing.expect(c.pc == 0x206);
-
-    c.v[0xA] = 0xBC;
-    try c.execute(i);
-    try std.testing.expect(c.pc == 0x208);
+    try std.testing.expect(c.pc == 0x204);
 }
