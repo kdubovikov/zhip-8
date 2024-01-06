@@ -175,7 +175,7 @@ pub const Chip8 = struct {
                 .opcode = opcode,
                 .register = secondNibble,
             } };
-        } else if (nibble == 0xE000) {
+        } else if (nibble == @intFromEnum(OpCodes.SKIP_KEY_NIBBLE)) {
             // skip key instructions decoding
             if (lastByte == @intFromEnum(OpCodes.SKIP_IF_KEY_PRESSED)) {
                 return Instruction{ .skipIfKeyPressed = .{
@@ -196,7 +196,7 @@ pub const Chip8 = struct {
                 .register = secondNibble,
                 .value = lastByte,
             } };
-        } else if (nibble == 0xF000) {
+        } else if (nibble == @intFromEnum(OpCodes.MISC_NIBBLE)) {
             // I/O and timer instructions
             if (lastByte == 0x0007) {
                 return Instruction{ .getDelayTimer = .{
@@ -246,7 +246,7 @@ pub const Chip8 = struct {
             } else {
                 return Chip8Error.InvalidInstruction;
             }
-        } else if (nibble == 0x8000) { // arithmetic
+        } else if (nibble == @intFromEnum(OpCodes.ARITHMETIC_NIBBLE)) { // arithmetic
             switch (fourthNibble) {
                 @intFromEnum(OpCodes.REGISTER_SET) => {
                     return Instruction{ .registerSet = .{
@@ -462,6 +462,7 @@ const OpCodes = enum(u16) {
     SKIP_IF_NOT_EQUAL_REGISTER = 0x9000, // Skip next instruction if VX != VY
 
     // arithmetic operations 4th nibble mask
+    ARITHMETIC_NIBBLE = 0x8000,
     REGISTER_SET = 0x0000, // Set VX to VY, or binary logic instructions
     AND = 0x0001, // Set VX to VX & VY
     OR = 0x0002, // Set VX to VX | VY
@@ -477,10 +478,12 @@ const OpCodes = enum(u16) {
     RND = 0xC000, // Set VX to random number & NN
 
     // skip key 0xE000 4th nibble mask
+    SKIP_KEY_NIBBLE = 0xE000,
     SKIP_IF_KEY_PRESSED = 0x009E, // Skip next instruction if key with value VX is pressed
     SKIP_IF_KEY_NOT_PRESSED = 0x00A1, // Skip next instruction if key with value VX is not pressed
 
     // timer and I/O instructions 0xF000 4th nibble mask
+    MISC_NIBBLE = 0xF000,
     // GET_TIMER = 0x0007, // Set VX to value of delay timer
     SET_TIMER = 0x0015, // Set delay timer to VX
     SET_SOUND_TIMER = 0x0018, // Set sound timer to VX
