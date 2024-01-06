@@ -170,6 +170,82 @@ pub const Chip8 = struct {
                 .registerX = secondNibble,
                 .registerY = thirdNibble,
             } };
+        } else if (nibble == @intFromEnum(OpCodes.JUMP_WITH_OFFSET)) {
+            return Instruction{ .jumpWithOffset = .{
+                .opcode = opcode,
+                .register = secondNibble,
+            } };
+        } else if (nibble == 0xE000) {
+            // skip key instructions decoding
+            if (lastByte == @intFromEnum(OpCodes.SKIP_IF_KEY_PRESSED)) {
+                return Instruction{ .skipIfKeyPressed = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else if (lastByte == @intFromEnum(OpCodes.SKIP_IF_KEY_NOT_PRESSED)) {
+                return Instruction{ .skipIfKeyPressed = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else {
+                return Chip8Error.InvalidInstruction;
+            }
+        } else if (nibble == @intFromEnum(OpCodes.RND)) {
+            return Instruction{ .random = .{
+                .opcode = opcode,
+                .register = secondNibble,
+                .value = lastByte,
+            } };
+        } else if (nibble == 0xF000) {
+            // I/O and timer instructions
+            if (lastByte == 0x0007) {
+                return Instruction{ .getDelayTimer = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else if (lastByte == @intFromEnum(OpCodes.SET_TIMER)) {
+                return Instruction{ .setDelayTimer = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else if (lastByte == @intFromEnum(OpCodes.SET_SOUND_TIMER)) {
+                return Instruction{ .setSoundTimer = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else if (lastByte == @intFromEnum(OpCodes.ADDI)) {
+                return Instruction{ .addI = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else if (lastByte == @intFromEnum(OpCodes.GET_KEY)) {
+                return Instruction{ .getKey = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else if (lastByte == @intFromEnum(OpCodes.FONT_CHARACTER)) {
+                return Instruction{ .fontCharacter = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else if (lastByte == @intFromEnum(OpCodes.DECIMAL)) {
+                return Instruction{ .binaryCodedDecimal = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else if (lastByte == @intFromEnum(OpCodes.STORE_MEMORY)) {
+                return Instruction{ .storeMemory = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else if (lastByte == @intFromEnum(OpCodes.LOAD_MEMORY)) {
+                return Instruction{ .loadMemory = .{
+                    .opcode = opcode,
+                    .register = secondNibble,
+                } };
+            } else {
+                return Chip8Error.InvalidInstruction;
+            }
         } else if (nibble == 0x8000) { // arithmetic
             switch (fourthNibble) {
                 @intFromEnum(OpCodes.REGISTER_SET) => {
@@ -399,17 +475,21 @@ const OpCodes = enum(u16) {
 
     JUMP_WITH_OFFSET = 0xB000, // Jump to address NNN + V0
     RND = 0xC000, // Set VX to random number & NN
-    SKIP_IF_KEY_PRESSED = 0xE09E, // Skip next instruction if key with value VX is pressed
-    SKIP_IF_KEY_NOT_PRESSED = 0xE0A1, // Skip next instruction if key with value VX is not pressed
-    GET_TIMER = 0xF007, // Set VX to value of delay timer
-    SET_TIMER = 0xF015, // Set delay timer to VX
-    SET_SOUND_TIMER = 0xF018, // Set sound timer to VX
-    ADDI = 0xF01E, // Set I to I + VX
-    GET_KEY = 0xF00A, // Wait for key press and store in VX
-    FONT_CHARACTER = 0xF029, // Set I to location of sprite for character in VX
-    DECIMAL = 0xF033, // Store BCD representation of VX in memory locations I, I+1, and I+2
-    STORE_MEMORY = 0xF055, // Store registers V0 through VX in memory starting at location I
-    LOAD_MEMORY = 0xF065, // Read registers V0 through VX from memory starting at location I
+
+    // skip key 0xE000 4th nibble mask
+    SKIP_IF_KEY_PRESSED = 0x009E, // Skip next instruction if key with value VX is pressed
+    SKIP_IF_KEY_NOT_PRESSED = 0x00A1, // Skip next instruction if key with value VX is not pressed
+
+    // timer and I/O instructions 0xF000 4th nibble mask
+    // GET_TIMER = 0x0007, // Set VX to value of delay timer
+    SET_TIMER = 0x0015, // Set delay timer to VX
+    SET_SOUND_TIMER = 0x0018, // Set sound timer to VX
+    ADDI = 0x001E, // Set I to I + VX
+    GET_KEY = 0x000A, // Wait for key press and store in VX
+    FONT_CHARACTER = 0x0029, // Set I to location of sprite for character in VX
+    DECIMAL = 0x0033, // Store BCD representation of VX in memory locations I, I+1, and I+2
+    STORE_MEMORY = 0x0055, // Store registers V0 through VX in memory starting at location I
+    LOAD_MEMORY = 0x0065, // Read registers V0 through VX from memory starting at location I
 };
 
 const Instruction = union(enum) {
@@ -838,6 +918,148 @@ test "Decode SHIFT_LEFT" {
     try std.testing.expect(i.shiftLeft.opcode == opcode);
     try std.testing.expect(i.shiftLeft.registerX == 0xA);
     try std.testing.expect(i.shiftLeft.registerY == 0xB);
+}
+
+test "Decode JUMP_WITH_OFFSET" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    var opcode: u16 = 0xBABC;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.jumpWithOffset.opcode == opcode);
+    try std.testing.expect(i.jumpWithOffset.register == 0xA);
+}
+
+test "Decode RND" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    var opcode: u16 = 0xCABC;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.random.opcode == opcode);
+    try std.testing.expect(i.random.register == 0xA);
+    try std.testing.expect(i.random.value == 0xBC);
+}
+
+test "Decode SKIP_IF_KEY_PRESSED" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    var program = &[_]u16{0xE0A1};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.skipIfKeyPressed.opcode == opcode);
+    try std.testing.expect(i.skipIfKeyPressed.register == 0x0);
+}
+
+test "Decode SKIP_IF_KEY_NOT_PRESSED" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    var program = &[_]u16{0xE09E};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.skipIfKeyPressed.opcode == opcode);
+    try std.testing.expect(i.skipIfKeyPressed.register == 0x0);
+}
+
+test "Decode GET_TIMER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    var opcode: u16 = 0xFA07;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.getDelayTimer.opcode == opcode);
+    try std.testing.expect(i.getDelayTimer.register == 0xA);
+}
+
+test "Decode SET_TIMER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    var opcode: u16 = 0xFA15;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.setDelayTimer.opcode == opcode);
+    try std.testing.expect(i.setDelayTimer.register == 0xA);
+}
+
+test "Decode SET_SOUND_TIMER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    // 0xFA18
+    var opcode: u16 = 0xFA18;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.setSoundTimer.opcode == opcode);
+    try std.testing.expect(i.setSoundTimer.register == 0xA);
+}
+
+test "Decode ADDI" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    // 0xFA1E
+    var opcode: u16 = 0xFA1E;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.addI.opcode == opcode);
+    try std.testing.expect(i.addI.register == 0xA);
+}
+
+test "Decode GET_KEY" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    // 0xFA0A
+    var opcode: u16 = 0xFA0A;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.getKey.opcode == opcode);
+    try std.testing.expect(i.getKey.register == 0xA);
+}
+
+test "Decode FONT_CHARACTER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    // 0xFA29
+    var opcode: u16 = 0xFA29;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.fontCharacter.opcode == opcode);
+    try std.testing.expect(i.fontCharacter.register == 0xA);
+}
+
+test "Decode BINARY_CODED_DECIMAL" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    // 0xFA33
+    var opcode: u16 = 0xFA33;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.binaryCodedDecimal.opcode == opcode);
+    try std.testing.expect(i.binaryCodedDecimal.register == 0xA);
+}
+
+test "Decode STORE_MEMORY" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    // 0xFA55
+    var opcode: u16 = 0xFA55;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.storeMemory.opcode == opcode);
+    try std.testing.expect(i.storeMemory.register == 0xA);
+}
+
+test "Decode LOAD_MEMORY" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+    // 0xFA65
+    var opcode: u16 = 0xFA65;
+    var i = try c.decode(opcode);
+    try std.testing.expect(i.loadMemory.opcode == opcode);
+    try std.testing.expect(i.loadMemory.register == 0xA);
 }
 
 test "Execute CLS" {
