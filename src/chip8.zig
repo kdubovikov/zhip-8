@@ -1,10 +1,12 @@
 const std = @import("std");
 const rom = @import("rom.zig");
 const dsp = @import("display.zig");
+const font = @import("font.zig");
 
 const memSize: usize = 4096; // 4 KB
 const memStart: usize = 0x200; // 512, the first 512 bytes are reserved for the interpreter
 const stackSize: usize = 16;
+const fontOffset: usize = 0x0;
 
 pub const Chip8Error = error{InvalidInstruction};
 
@@ -32,6 +34,11 @@ pub const Chip8 = struct {
 
         var v = [_]u8{0} ** 16;
         var stack = [_]u16{0} ** 16;
+
+        // load font into interpreter-reserved memory
+        for (0.., font.font) |i, byte| {
+            mem[fontOffset + i] = byte;
+        }
 
         var ret = Self{
             .pc = memStart,
@@ -173,7 +180,7 @@ pub const Chip8 = struct {
         } else if (nibble == @intFromEnum(OpCodes.JUMP_WITH_OFFSET)) {
             return Instruction{ .jumpWithOffset = .{
                 .opcode = opcode,
-                .register = secondNibble,
+                .address = address,
             } };
         } else if (nibble == @intFromEnum(OpCodes.SKIP_KEY_NIBBLE)) {
             // skip key instructions decoding
@@ -437,6 +444,58 @@ pub const Chip8 = struct {
                 self.v[VF] = self.v[shift_left_struct.registerY] >> 7;
                 self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerY] << 1;
             },
+            .jumpWithOffset => |jump_with_offset_struct| {
+                self.pc = self.v[0] + jump_with_offset_struct.address;
+            },
+            .random => |random_struct| {
+                var rnd = std.rand.DefaultPrng.init(@intCast(std.time.milliTimestamp()));
+                const random = rnd.random().uintAtMost(u8, 254) + 1;
+                self.v[random_struct.register] = random & random_struct.value;
+            },
+            .skipIfKeyPressed => |skip_if_key_pressed_struct| {
+                const key = self.v[skip_if_key_pressed_struct.register];
+                _ = key;
+                return error.InitError;
+                // if (self.display.keyPressed(key)) {
+                //     self.pc += 2;
+                // }
+            },
+            .getDelayTimer => |get_delay_timer_struct| {
+                self.v[get_delay_timer_struct.register] = self.delayTimer;
+            },
+            .setDelayTimer => |set_delay_timer_struct| {
+                self.delayTimer = self.v[set_delay_timer_struct.register];
+            },
+            .setSoundTimer => |set_sound_timer_struct| {
+                self.soundTimer = self.v[set_sound_timer_struct.register];
+            },
+            .addI => |add_i_struct| {
+                self.i += self.v[add_i_struct.register];
+            },
+            .fontCharacter => |font_character_struct| {
+                const character = self.v[font_character_struct.register];
+                const lastNibble = character & 0x0F;
+                // each character is 5 bytes long
+                self.i = lastNibble;
+            },
+            .binaryCodedDecimal => |bcd_struct| {
+                const value = self.v[bcd_struct.register];
+                self.memory[self.i] = value / 100;
+                self.memory[self.i + 1] = (value / 10) % 10;
+                self.memory[self.i + 2] = value % 10;
+            },
+            .storeMemory => |store_memory_struct| {
+                const x = store_memory_struct.register;
+                for (0..x) |i| {
+                    self.memory[self.i + i] = self.v[i];
+                }
+            },
+            .loadMemory => |load_memory_struct| {
+                const x = load_memory_struct.register;
+                for (0..x) |i| {
+                    self.v[i] = self.memory[self.i + i];
+                }
+            },
         }
     }
 };
@@ -592,7 +651,7 @@ const Instruction = union(enum) {
     },
     jumpWithOffset: struct {
         opcode: u16,
-        register: u4,
+        address: u12,
     },
     random: struct {
         opcode: u16,
@@ -930,7 +989,7 @@ test "Decode JUMP_WITH_OFFSET" {
     var opcode: u16 = 0xBABC;
     var i = try c.decode(opcode);
     try std.testing.expect(i.jumpWithOffset.opcode == opcode);
-    try std.testing.expect(i.jumpWithOffset.register == 0xA);
+    try std.testing.expect(i.jumpWithOffset.address == 0xABC);
 }
 
 test "Decode RND" {
@@ -1396,4 +1455,160 @@ test "Execute SHIFT_LEFT" {
     try c.execute(i);
     try std.testing.expect(c.v[0xB] == 0b01010100);
     try std.testing.expect(c.v[0xF] == 1);
+}
+
+test "Execute JUMP_WITH_OFFSET" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0x0] = 0x01;
+    var program = &[_]u16{0xBABC};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expectEqual(c.pc, 0xABC + 0x01);
+}
+
+test "Execute RND" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    var program = &[_]u16{0xCABC};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expect(c.v[0xA] != 0);
+}
+
+test "Execute GET_DELAY_TIMER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.delayTimer = 0x01;
+    var program = &[_]u16{0xFA07};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expectEqual(c.v[0xA], 0x01);
+}
+
+test "Execute SET_DELAY_TIMER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 0x01;
+    var program = &[_]u16{0xFA15};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expectEqual(c.delayTimer, 0x01);
+}
+
+test "Execute SET_SOUND_TIMER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 0x01;
+    var program = &[_]u16{0xFA18};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expectEqual(c.soundTimer, 0x01);
+}
+
+test "Execute ADDI" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.i = 0x01;
+    c.v[0xA] = 0x01;
+    var program = &[_]u16{0xFA1E};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expectEqual(c.i, 0x02);
+}
+
+test "Execute FONT_CHARACTER" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 0x5;
+    var program = &[_]u16{0xFA29};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expectEqual(c.i, 0x05);
+    try std.testing.expectEqual(c.memory[c.i], font.font[5]);
+}
+
+test "Execute BINARY_CODED_DECIMAL" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0xA] = 123;
+    var program = &[_]u16{0xFA33};
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expectEqual(c.memory[c.i], 1);
+    try std.testing.expectEqual(c.memory[c.i + 1], 2);
+    try std.testing.expectEqual(c.memory[c.i + 2], 3);
+}
+
+test "Execute STORE_MEMORY" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.v[0] = 1;
+    c.v[1] = 2;
+    c.v[2] = 3;
+    c.v[3] = 4; // we won't store this one
+    c.i = 0x200;
+    var program = &[_]u16{0xF355}; // store 3 registers starting at 0x200
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expectEqual(c.memory[0x200], 1);
+    try std.testing.expectEqual(c.memory[0x201], 2);
+    try std.testing.expectEqual(c.memory[0x202], 3);
+    try std.testing.expect(c.memory[0x203] != 4);
+}
+
+test "Execute LOAD_MEMORY" {
+    var display = try dsp.Display.init();
+    defer display.destroy();
+    var c = try Chip8.init(&display);
+
+    c.memory[0x200] = 1;
+    c.memory[0x201] = 2;
+    c.memory[0x202] = 3;
+    c.i = 0x200;
+    var program = &[_]u16{0xF265}; // load 3 registers starting at 0x200
+    c.loadFromArray(program);
+    var opcode = c.fetch();
+    var i = try c.decode(opcode);
+    try c.execute(i);
+    try std.testing.expectEqual(c.v[0], 1);
+    try std.testing.expectEqual(c.v[1], 2);
+    try std.testing.expectEqual(c.v[2], 3);
+    try std.testing.expect(c.v[3] != 4);
 }
