@@ -7,6 +7,7 @@ const memSize: usize = 4096; // 4 KB
 const memStart: usize = 0x200; // 512, the first 512 bytes are reserved for the interpreter
 const stackSize: usize = 16;
 const fontOffset: usize = 0x0;
+const timerFrequency: u64 = (1 / 60 * 1000); // 60 Hz
 
 pub const Chip8Error = error{InvalidInstruction};
 
@@ -19,6 +20,7 @@ pub const Chip8 = struct {
     delayTimer: u8, // delay timer
     soundTimer: u8, // sound timer
     display: *dsp.Display,
+    timestamp: i64,
 
     memory: [memSize]u8, // 4 KB
 
@@ -50,6 +52,7 @@ pub const Chip8 = struct {
             .delayTimer = 0,
             .soundTimer = 0,
             .display = display,
+            .timestamp = std.time.microTimestamp(),
         };
 
         return ret;
@@ -86,11 +89,26 @@ pub const Chip8 = struct {
         }
     }
 
+    pub fn updateTimers(self: *Self, timestamp: i64) void {
+        if (timestamp - self.timestamp >= timerFrequency) {
+            if (self.delayTimer > 0) {
+                self.delayTimer -= 1;
+            }
+
+            if (self.soundTimer > 0) {
+                self.soundTimer -= 1;
+            }
+
+            self.timestamp = timestamp;
+        }
+    }
+
     // cycle through the fetch, decode, and execute steps
     pub fn cycle(self: *Self) !void {
         const opcode = self.fetch();
         const instruction = try self.decode(opcode);
         try self.execute(instruction);
+        self.updateTimers(std.time.milliTimestamp());
     }
 
     // fetch the next instruction and increment the program counter

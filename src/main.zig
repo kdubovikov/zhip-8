@@ -8,6 +8,8 @@ pub fn main() !void {
 
     try display.clearScreen();
 
+    try display.playBeep();
+
     while (true) {
         try chip8.cycle();
         try display.renderLoop();
