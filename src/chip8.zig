@@ -213,6 +213,7 @@ pub const Chip8 = struct {
                     .register = secondNibble,
                 } };
             } else {
+                std.log.err("Invalid instruction 0x{x}\n", .{opcode});
                 return Chip8Error.InvalidInstruction;
             }
         } else if (nibble == @intFromEnum(OpCodes.RND)) {
@@ -269,6 +270,7 @@ pub const Chip8 = struct {
                     .register = secondNibble,
                 } };
             } else {
+                std.log.err("Invalid instruction 0x{x}\n", .{opcode});
                 return Chip8Error.InvalidInstruction;
             }
         } else if (nibble == @intFromEnum(OpCodes.ARITHMETIC_NIBBLE)) { // arithmetic
@@ -359,7 +361,13 @@ pub const Chip8 = struct {
                 self.v[setvx_struct.register] = setvx_struct.value;
             },
             .addvx => |addvx_struct| {
-                self.v[addvx_struct.register] += addvx_struct.value;
+                const ov = @addWithOverflow(self.v[addvx_struct.register], addvx_struct.value);
+                if (ov[1] == 1) {
+                    self.v[VF] = 1;
+                } else {
+                    self.v[VF] = 0;
+                }
+                self.v[addvx_struct.register] = ov[0];
             },
             .seti => |seti_struct| {
                 self.i = seti_struct.address;
@@ -392,9 +400,10 @@ pub const Chip8 = struct {
                     return error.InitError;
                 }
 
-                self.stack[self.sp] = self.pc;
+                self.memory[self.sp] = @as(u8, @truncate(self.pc & 0x00FF));
+                self.memory[self.sp + 1] = @as(u8, @truncate((self.pc & 0xFF00) >> 8));
+                self.sp += 2;
                 self.pc = call_struct.address;
-                self.sp += 1;
                 return;
             },
             .ret => |ret_struct| {
@@ -404,8 +413,8 @@ pub const Chip8 = struct {
                     return error.InitError;
                 }
 
-                self.pc = self.stack[self.sp];
-                self.sp -= 1;
+                self.pc = combine(self.memory[self.sp - 1], self.memory[self.sp - 2]);
+                self.sp -= 2;
                 return;
             },
             else => {
@@ -451,7 +460,8 @@ pub const Chip8 = struct {
             .substractRegister => |substract_register_struct| {
                 const x = self.v[substract_register_struct.registerX];
                 const y = self.v[substract_register_struct.registerY];
-                self.v[substract_register_struct.registerX] = x - y;
+                const sub = @subWithOverflow(x, y);
+                self.v[substract_register_struct.registerX] = sub[0];
                 self.v[VF] = if (x > y) 1 else 0;
             },
             .shiftRight => |shift_struct| {
@@ -463,7 +473,7 @@ pub const Chip8 = struct {
                 self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerY] << 1;
             },
             .jumpWithOffset => |jump_with_offset_struct| {
-                self.pc = self.v[0] + jump_with_offset_struct.address;
+                self.pc = self.i + jump_with_offset_struct.address;
             },
             .random => |random_struct| {
                 var rnd = std.rand.DefaultPrng.init(@intCast(std.time.milliTimestamp()));

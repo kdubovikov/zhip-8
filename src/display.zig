@@ -172,7 +172,7 @@ pub const Display = struct {
         c.SDL_DestroyTexture(self.screen);
         c.SDL_DestroyRenderer(self.renderer);
         c.SDL_DestroyWindow(self.window);
-        c.SDL_CloseAudioDevice(self.audio_device.*);
+        // c.SDL_CloseAudioDevice(self.audio_device.*);
         // c.SDL_FreeWAV();
         c.SDL_Quit();
     }
