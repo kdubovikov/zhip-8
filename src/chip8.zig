@@ -468,15 +468,25 @@ pub const Chip8 = struct {
                 }
                 const sub = @subWithOverflow(x, y);
                 self.v[substract_register_struct.registerX] = sub[0];
-                self.v[VF] = if (x > y) 1 else 0;
+                self.v[VF] = 1 - sub[1];
             },
             .shiftRight => |shift_struct| {
-                self.v[shift_struct.registerX] = self.v[shift_struct.registerY] >> 1;
-                self.v[VF] = self.v[shift_struct.registerY] & 0x1;
+                // self.v[VF] = self.v[shift_struct.registerX] & 0x1;
+                // self.v[shift_struct.registerX] = self.v[shift_struct.registerY];
+                self.v[VF] = 0;
+                if ((self.v[shift_struct.registerX] & 0x1) != 0) {
+                    self.v[VF] = 1;
+                }
+                self.v[shift_struct.registerX] = self.v[shift_struct.registerX] >> 1;
             },
             .shiftLeft => |shift_left_struct| {
-                self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerY] << 1;
-                self.v[VF] = self.v[shift_left_struct.registerY] >> 7;
+                // self.v[VF] = self.v[shift_left_struct.registerX] >> 7;
+                // self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerY];
+                self.v[VF] = 0;
+                if ((self.v[shift_left_struct.registerX] & 0x80) != 0) {
+                    self.v[VF] = 1;
+                }
+                self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerX] << 1;
             },
             .jumpWithOffset => |jump_with_offset_struct| {
                 self.pc = self.i + jump_with_offset_struct.address;
@@ -489,24 +499,26 @@ pub const Chip8 = struct {
             .skipIfKeyPressed => |skip_if_key_pressed_struct| {
                 const key = self.v[skip_if_key_pressed_struct.register];
                 if (self.display.keyPressed(key)) {
+                    // std.debug.print("key p: {}\n", .{key});
                     self.pc += 2;
                 }
             },
             .skipIfKeyNotPressed => |skip_if_key_not_pressed_struct| {
                 const key = self.v[skip_if_key_not_pressed_struct.register];
                 if (!self.display.keyPressed(key)) {
+                    // std.debug.print("key notp: {}\n", .{key});
                     self.pc += 2;
                 }
             },
             .getKey => |get_key_struct| {
-                std.debug.print("getkey", .{});
+                // std.debug.print("getkey", .{});
                 const key = self.display.getPressedKey();
                 if (key == 0xFF) {
-                    std.debug.print("getkey - none", .{});
+                    // std.debug.print("getkey - none", .{});
                     self.pc -= 2;
                 } else {
                     self.v[get_key_struct.register] = key;
-                    std.debug.print("getkey - {}", .{key});
+                    // std.debug.print("getkey - {}", .{key});
                 }
             },
             .getDelayTimer => |get_delay_timer_struct| {
@@ -535,16 +547,20 @@ pub const Chip8 = struct {
             },
             .storeMemory => |store_memory_struct| {
                 const x = store_memory_struct.register;
-                for (0..x + 1) |i| {
+                var i: u8 = 0;
+                while (i <= x) {
                     self.memory[self.i + i] = self.v[i];
+                    i += 1;
                 }
             },
             .loadMemory => |load_memory_struct| {
                 const x = load_memory_struct.register;
-                std.debug.print("loading memory up to {}\n", .{x});
-                for (0..x + 1) |i| {
-                    std.debug.print("{} loading memory at {} with {}\n", .{ i, self.i + i, self.memory[self.i + i] });
+                // std.debug.print("loading memory up to {}\n", .{x});
+                var i: u8 = 0;
+                while (i <= x) {
+                    // std.debug.print("{} loading memory at {} with {}\n", .{ i, self.i + i, self.memory[self.i + i] });
                     self.v[i] = self.memory[self.i + i];
+                    i += 1;
                 }
             },
         }

@@ -3,6 +3,8 @@ const emu = @import("chip8.zig");
 const std = @import("std");
 
 const err = error.InitError;
+const fps: u64 = (1 / 60 * 1000);
+const ipf: u64 = 3;
 
 pub fn main() !void {
     const alloc: std.mem.Allocator = std.heap.page_allocator;
@@ -23,10 +25,20 @@ pub fn main() !void {
 
     // try display.playBeep();
 
+    var lastTime = display.getTicks();
     while (true) {
-        try chip8.cycle();
+        const diff = (display.getTicks() - lastTime);
 
-        try display.renderLoop();
+        // std.debug.print("Running {d}\n", .{diff});
+        if (diff > fps) {
+            try display.handleInput();
+            for (0..ipf) |i| {
+                _ = i;
+                try chip8.cycle();
+            }
+            try display.render();
+            lastTime = display.getTicks();
+        }
 
         if (display.shouldQuit()) {
             break;

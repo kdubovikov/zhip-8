@@ -45,13 +45,6 @@ fn audioCallback(user_data: ?*anyopaque, raw_buffer: [*c]u8, bytes: c_int) callc
     }
 }
 
-const KEY_VALUES = [_]u8{
-    0x1, 0x2, 0x3, 0xC,
-    0x4, 0x5, 0x6, 0xD,
-    0x7, 0x8, 0x9, 0xE,
-    0xA, 0x0, 0xB, 0xF,
-};
-
 pub const Display = struct {
     window: *c.SDL_Window,
     renderer: *c.SDL_Renderer,
@@ -105,6 +98,11 @@ pub const Display = struct {
         return Self{ .should_quit = false, .window = window, .renderer = renderer, .screen = texture, .pixels = pixels, .beep_sound = &audio_spec, .audio_device = undefined, .key_state = keyState };
     }
 
+    pub fn getTicks(self: *Self) u64 {
+        _ = self;
+        return c.SDL_GetTicks64();
+    }
+
     pub fn keyPressed(self: *Self, key: u8) bool {
         return self.key_state[key] == 1;
     }
@@ -112,7 +110,7 @@ pub const Display = struct {
     pub fn getPressedKey(self: *Self) u8 {
         for (self.key_state[0..], 0..) |key, i| {
             if (key == 1) {
-                return @as(u8, @truncate(i));
+                return @as(u8, @intCast(i));
             }
         }
         return 0xFF;
@@ -174,18 +172,21 @@ pub const Display = struct {
         }
     }
 
-    pub fn renderLoop(self: *Self) !void {
+    pub fn handleInput(self: *Self) !void {
         var sdl_event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&sdl_event) != 0) {
             switch (sdl_event.type) {
                 c.SDL_QUIT => self.should_quit = true,
                 c.SDL_KEYDOWN => {
                     const key = sdl_event.key.keysym.sym;
+                    if (sdl_event.key.repeat != 0) {
+                        break;
+                    }
                     switch (key) {
                         c.SDLK_ESCAPE => self.should_quit = true,
-                        c.SDLK_1 => self.key_state[0x0] = 1,
-                        c.SDLK_2 => self.key_state[0x1] = 1,
-                        c.SDLK_3 => self.key_state[0x2] = 1,
+                        c.SDLK_1 => self.key_state[0x1] = 1,
+                        c.SDLK_2 => self.key_state[0x2] = 1,
+                        c.SDLK_3 => self.key_state[0x3] = 1,
                         c.SDLK_4 => self.key_state[0xc] = 1,
                         c.SDLK_q => self.key_state[0x4] = 1,
                         c.SDLK_w => self.key_state[0x5] = 1,
@@ -204,10 +205,13 @@ pub const Display = struct {
                 },
                 c.SDL_KEYUP => {
                     const key = sdl_event.key.keysym.sym;
+                    if (sdl_event.key.repeat != 0) {
+                        break;
+                    }
                     switch (key) {
-                        c.SDLK_1 => self.key_state[0x0] = 0,
-                        c.SDLK_2 => self.key_state[0x1] = 0,
-                        c.SDLK_3 => self.key_state[0x2] = 0,
+                        c.SDLK_1 => self.key_state[0x1] = 0,
+                        c.SDLK_2 => self.key_state[0x2] = 0,
+                        c.SDLK_3 => self.key_state[0x3] = 0,
                         c.SDLK_4 => self.key_state[0xc] = 0,
                         c.SDLK_q => self.key_state[0x4] = 0,
                         c.SDLK_w => self.key_state[0x5] = 0,
@@ -227,7 +231,9 @@ pub const Display = struct {
                 else => {},
             }
         }
+    }
 
+    pub fn render(self: *Self) !void {
         try sdlErr(c.SDL_RenderClear(self.renderer));
         try sdlErr(c.SDL_UpdateTexture(self.screen, null, self.pixels[0..].ptr, displayWidth * @sizeOf(u32)));
         try sdlErr(c.SDL_RenderCopy(self.renderer, self.screen, null, null));
