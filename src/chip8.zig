@@ -471,22 +471,16 @@ pub const Chip8 = struct {
                 self.v[VF] = 1 - sub[1];
             },
             .shiftRight => |shift_struct| {
-                // self.v[VF] = self.v[shift_struct.registerX] & 0x1;
+                const tmp = self.v[shift_struct.registerX] & 0x1;
                 // self.v[shift_struct.registerX] = self.v[shift_struct.registerY];
-                self.v[VF] = 0;
-                if ((self.v[shift_struct.registerX] & 0x1) != 0) {
-                    self.v[VF] = 1;
-                }
                 self.v[shift_struct.registerX] = self.v[shift_struct.registerX] >> 1;
+                self.v[VF] = tmp;
             },
             .shiftLeft => |shift_left_struct| {
-                // self.v[VF] = self.v[shift_left_struct.registerX] >> 7;
+                const tmp = self.v[shift_left_struct.registerX] >> 7;
                 // self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerY];
-                self.v[VF] = 0;
-                if ((self.v[shift_left_struct.registerX] & 0x80) != 0) {
-                    self.v[VF] = 1;
-                }
                 self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerX] << 1;
+                self.v[VF] = tmp;
             },
             .jumpWithOffset => |jump_with_offset_struct| {
                 self.pc = self.i + jump_with_offset_struct.address;
