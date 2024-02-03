@@ -6,7 +6,7 @@ const font = @import("font.zig");
 const memSize: usize = 4096; // 4 KB
 const memStart: usize = 0x200; // 512, the first 512 bytes are reserved for the interpreter
 const stackSize: usize = 16;
-const fontOffset: usize = 0x0;
+const fontOffset: usize = 0x50;
 const timerFrequency: u64 = (1 / 60 * 1000); // 60 Hz
 
 pub const Chip8Error = error{InvalidInstruction};
@@ -531,7 +531,7 @@ pub const Chip8 = struct {
                 const character = self.v[font_character_struct.register];
                 const lastNibble = character & 0x0F;
                 // each character is 5 bytes long
-                self.i = lastNibble;
+                self.i = @as(u16, @intCast(fontOffset + (lastNibble * 5)));
             },
             .binaryCodedDecimal => |bcd_struct| {
                 const value = self.v[bcd_struct.register];
