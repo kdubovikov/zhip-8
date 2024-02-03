@@ -45,6 +45,13 @@ fn audioCallback(user_data: ?*anyopaque, raw_buffer: [*c]u8, bytes: c_int) callc
     }
 }
 
+const KEY_VALUES = [_]u8{
+    0x1, 0x2, 0x3, 0xC,
+    0x4, 0x5, 0x6, 0xD,
+    0x7, 0x8, 0x9, 0xE,
+    0xA, 0x0, 0xB, 0xF,
+};
+
 pub const Display = struct {
     window: *c.SDL_Window,
     renderer: *c.SDL_Renderer,
@@ -53,6 +60,7 @@ pub const Display = struct {
     should_quit: bool,
     beep_sound: *c.SDL_AudioSpec,
     audio_device: *c.SDL_AudioDeviceID,
+    key_state: [16]u8,
 
     const Self = @This();
 
@@ -79,8 +87,6 @@ pub const Display = struct {
             pixel.* = 0;
         }
 
-        // var audio_device: c.SDL_AudioDeviceID = undefined;
-        // _ = audio_device;
         const callback: (?*const fn (?*anyopaque, [*c]u8, c_int) callconv(.C) void) = &audioCallback;
         var audio_spec: c.SDL_AudioSpec = c.SDL_AudioSpec{
             .freq = 44100,
@@ -94,7 +100,22 @@ pub const Display = struct {
             .userdata = null,
         };
 
-        return Self{ .should_quit = false, .window = window, .renderer = renderer, .screen = texture, .pixels = pixels, .beep_sound = &audio_spec, .audio_device = undefined };
+        var keyState = [_]u8{0} ** 16;
+
+        return Self{ .should_quit = false, .window = window, .renderer = renderer, .screen = texture, .pixels = pixels, .beep_sound = &audio_spec, .audio_device = undefined, .key_state = keyState };
+    }
+
+    pub fn keyPressed(self: *Self, key: u8) bool {
+        return self.key_state[key] == 1;
+    }
+
+    pub fn getPressedKey(self: *Self) u8 {
+        for (self.key_state[0..], 0..) |key, i| {
+            if (key == 1) {
+                return @as(u8, @truncate(i));
+            }
+        }
+        return 0xFF;
     }
 
     pub fn playBeep(self: *Self) !void {
@@ -158,6 +179,51 @@ pub const Display = struct {
         while (c.SDL_PollEvent(&sdl_event) != 0) {
             switch (sdl_event.type) {
                 c.SDL_QUIT => self.should_quit = true,
+                c.SDL_KEYDOWN => {
+                    const key = sdl_event.key.keysym.sym;
+                    switch (key) {
+                        c.SDLK_ESCAPE => self.should_quit = true,
+                        c.SDLK_1 => self.key_state[0x0] = 1,
+                        c.SDLK_2 => self.key_state[0x1] = 1,
+                        c.SDLK_3 => self.key_state[0x2] = 1,
+                        c.SDLK_4 => self.key_state[0xc] = 1,
+                        c.SDLK_q => self.key_state[0x4] = 1,
+                        c.SDLK_w => self.key_state[0x5] = 1,
+                        c.SDLK_e => self.key_state[0x6] = 1,
+                        c.SDLK_r => self.key_state[0xd] = 1,
+                        c.SDLK_a => self.key_state[0x7] = 1,
+                        c.SDLK_s => self.key_state[0x8] = 1,
+                        c.SDLK_d => self.key_state[0x9] = 1,
+                        c.SDLK_f => self.key_state[0xe] = 1,
+                        c.SDLK_z => self.key_state[0xa] = 1,
+                        c.SDLK_x => self.key_state[0x0] = 1,
+                        c.SDLK_c => self.key_state[0xb] = 1,
+                        c.SDLK_v => self.key_state[0xf] = 1,
+                        else => {},
+                    }
+                },
+                c.SDL_KEYUP => {
+                    const key = sdl_event.key.keysym.sym;
+                    switch (key) {
+                        c.SDLK_1 => self.key_state[0x0] = 0,
+                        c.SDLK_2 => self.key_state[0x1] = 0,
+                        c.SDLK_3 => self.key_state[0x2] = 0,
+                        c.SDLK_4 => self.key_state[0xc] = 0,
+                        c.SDLK_q => self.key_state[0x4] = 0,
+                        c.SDLK_w => self.key_state[0x5] = 0,
+                        c.SDLK_e => self.key_state[0x6] = 0,
+                        c.SDLK_r => self.key_state[0xd] = 0,
+                        c.SDLK_a => self.key_state[0x7] = 0,
+                        c.SDLK_s => self.key_state[0x8] = 0,
+                        c.SDLK_d => self.key_state[0x9] = 0,
+                        c.SDLK_f => self.key_state[0xe] = 0,
+                        c.SDLK_z => self.key_state[0xa] = 0,
+                        c.SDLK_x => self.key_state[0x0] = 0,
+                        c.SDLK_c => self.key_state[0xb] = 0,
+                        c.SDLK_v => self.key_state[0xf] = 0,
+                        else => {},
+                    }
+                },
                 else => {},
             }
         }

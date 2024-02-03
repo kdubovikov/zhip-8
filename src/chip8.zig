@@ -208,7 +208,7 @@ pub const Chip8 = struct {
                     .register = secondNibble,
                 } };
             } else if (lastByte == @intFromEnum(OpCodes.SKIP_IF_KEY_NOT_PRESSED)) {
-                return Instruction{ .skipIfKeyPressed = .{
+                return Instruction{ .skipIfKeyNotPressed = .{
                     .opcode = opcode,
                     .register = secondNibble,
                 } };
@@ -313,6 +313,7 @@ pub const Chip8 = struct {
                 @intFromEnum(OpCodes.SUBSTRACT_REGISTER_LR) => {
                     return Instruction{ .substractRegister = .{
                         .opcode = opcode,
+                        .lr = true,
                         .registerX = secondNibble,
                         .registerY = thirdNibble,
                     } };
@@ -320,8 +321,9 @@ pub const Chip8 = struct {
                 @intFromEnum(OpCodes.SUBSTRACT_REGISTER_RL) => {
                     return Instruction{ .substractRegister = .{
                         .opcode = opcode,
-                        .registerX = thirdNibble,
-                        .registerY = secondNibble,
+                        .lr = false,
+                        .registerX = secondNibble,
+                        .registerY = thirdNibble,
                     } };
                 },
                 @intFromEnum(OpCodes.SHIFT) => {
@@ -362,12 +364,12 @@ pub const Chip8 = struct {
             },
             .addvx => |addvx_struct| {
                 const ov = @addWithOverflow(self.v[addvx_struct.register], addvx_struct.value);
+                self.v[addvx_struct.register] = ov[0];
                 if (ov[1] == 1) {
                     self.v[VF] = 1;
                 } else {
                     self.v[VF] = 0;
                 }
-                self.v[addvx_struct.register] = ov[0];
             },
             .seti => |seti_struct| {
                 self.i = seti_struct.address;
@@ -417,9 +419,6 @@ pub const Chip8 = struct {
                 self.sp -= 2;
                 return;
             },
-            else => {
-                std.debug.print("unimplemented instruction\n", .{});
-            },
             .skipIfEqual => |skip_if_equal_struct| {
                 if (self.v[skip_if_equal_struct.register] == skip_if_equal_struct.value) {
                     self.pc += 2;
@@ -458,19 +457,26 @@ pub const Chip8 = struct {
                 self.v[VF] = sum[1];
             },
             .substractRegister => |substract_register_struct| {
-                const x = self.v[substract_register_struct.registerX];
-                const y = self.v[substract_register_struct.registerY];
+                var x: u8 = 0;
+                var y: u8 = 0;
+                if (substract_register_struct.lr) {
+                    x = self.v[substract_register_struct.registerX];
+                    y = self.v[substract_register_struct.registerY];
+                } else {
+                    x = self.v[substract_register_struct.registerY];
+                    y = self.v[substract_register_struct.registerX];
+                }
                 const sub = @subWithOverflow(x, y);
                 self.v[substract_register_struct.registerX] = sub[0];
                 self.v[VF] = if (x > y) 1 else 0;
             },
             .shiftRight => |shift_struct| {
-                self.v[VF] = self.v[shift_struct.registerY] & 0x1;
                 self.v[shift_struct.registerX] = self.v[shift_struct.registerY] >> 1;
+                self.v[VF] = self.v[shift_struct.registerY] & 0x1;
             },
             .shiftLeft => |shift_left_struct| {
-                self.v[VF] = self.v[shift_left_struct.registerY] >> 7;
                 self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerY] << 1;
+                self.v[VF] = self.v[shift_left_struct.registerY] >> 7;
             },
             .jumpWithOffset => |jump_with_offset_struct| {
                 self.pc = self.i + jump_with_offset_struct.address;
@@ -482,11 +488,26 @@ pub const Chip8 = struct {
             },
             .skipIfKeyPressed => |skip_if_key_pressed_struct| {
                 const key = self.v[skip_if_key_pressed_struct.register];
-                _ = key;
-                return error.InitError;
-                // if (self.display.keyPressed(key)) {
-                //     self.pc += 2;
-                // }
+                if (self.display.keyPressed(key)) {
+                    self.pc += 2;
+                }
+            },
+            .skipIfKeyNotPressed => |skip_if_key_not_pressed_struct| {
+                const key = self.v[skip_if_key_not_pressed_struct.register];
+                if (!self.display.keyPressed(key)) {
+                    self.pc += 2;
+                }
+            },
+            .getKey => |get_key_struct| {
+                std.debug.print("getkey", .{});
+                const key = self.display.getPressedKey();
+                if (key == 0xFF) {
+                    std.debug.print("getkey - none", .{});
+                    self.pc -= 2;
+                } else {
+                    self.v[get_key_struct.register] = key;
+                    std.debug.print("getkey - {}", .{key});
+                }
             },
             .getDelayTimer => |get_delay_timer_struct| {
                 self.v[get_delay_timer_struct.register] = self.delayTimer;
@@ -514,14 +535,14 @@ pub const Chip8 = struct {
             },
             .storeMemory => |store_memory_struct| {
                 const x = store_memory_struct.register;
-                for (0..x) |i| {
+                for (0..x + 1) |i| {
                     self.memory[self.i + i] = self.v[i];
                 }
             },
             .loadMemory => |load_memory_struct| {
                 const x = load_memory_struct.register;
                 std.debug.print("loading memory up to {}\n", .{x});
-                for (0..x) |i| {
+                for (0..x + 1) |i| {
                     std.debug.print("{} loading memory at {} with {}\n", .{ i, self.i + i, self.memory[self.i + i] });
                     self.v[i] = self.memory[self.i + i];
                 }
@@ -553,8 +574,8 @@ const OpCodes = enum(u16) {
     // arithmetic operations 4th nibble mask
     ARITHMETIC_NIBBLE = 0x8000,
     REGISTER_SET = 0x0000, // Set VX to VY, or binary logic instructions
-    AND = 0x0001, // Set VX to VX & VY
-    OR = 0x0002, // Set VX to VX | VY
+    OR = 0x0001, // Set VX to VX & VY
+    AND = 0x0002, // Set VX to VX | VY
     XOR = 0x0003, // Set VX to VX ^ VY
     ADD_REGISTER_NO_CARRY = 0x0004, // Set VX to VX + VY, set VF to 1 if there is a carry, 0 otherwise
     SUBSTRACT_REGISTER_LR = 0x0005, // Set VX to VX - VY, set VF to 0 if there is a borrow, 1 otherwise
@@ -666,6 +687,7 @@ const Instruction = union(enum) {
     },
     substractRegister: struct {
         opcode: u16,
+        lr: bool,
         registerX: u4,
         registerY: u4,
     },
@@ -689,6 +711,10 @@ const Instruction = union(enum) {
         value: u8,
     },
     skipIfKeyPressed: struct {
+        opcode: u16,
+        register: u4,
+    },
+    skipIfKeyNotPressed: struct {
         opcode: u16,
         register: u4,
     },
