@@ -4,7 +4,7 @@ const std = @import("std");
 
 const err = error.InitError;
 const fps: u64 = (1 / 60 * 1000);
-const ipf: u64 = 3;
+const ipf: u64 = 100;
 
 pub fn main() !void {
     const alloc: std.mem.Allocator = std.heap.page_allocator;
@@ -29,12 +29,13 @@ pub fn main() !void {
     while (true) {
         const diff = (display.getTicks() - lastTime);
 
+        chip8.updateTimers(display.getTicks());
         // std.debug.print("Running {d}\n", .{diff});
         if (diff > fps) {
             try display.handleInput();
             for (0..ipf) |i| {
                 _ = i;
-                try chip8.cycle();
+                try chip8.cycle(false);
             }
             try display.render();
             lastTime = display.getTicks();

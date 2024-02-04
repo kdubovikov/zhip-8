@@ -19,7 +19,7 @@ pub const Chip8 = struct {
     delayTimer: u8, // delay timer
     soundTimer: u8, // sound timer
     display: *dsp.Display,
-    timestamp: i64,
+    timestamp: u64,
 
     memory: [memSize]u8, // 4 KB
     stack: [stackSize]u16, // 16 levels of stack
@@ -53,7 +53,7 @@ pub const Chip8 = struct {
             .delayTimer = 0,
             .soundTimer = 0,
             .display = display,
-            .timestamp = std.time.microTimestamp(),
+            .timestamp = 0,
         };
 
         return ret;
@@ -99,7 +99,7 @@ pub const Chip8 = struct {
         }
     }
 
-    pub fn updateTimers(self: *Self, timestamp: i64) void {
+    pub fn updateTimers(self: *Self, timestamp: u64) void {
         if (timestamp - self.timestamp >= timerFrequency) {
             if (self.delayTimer > 0) {
                 self.delayTimer -= 1;
@@ -114,11 +114,13 @@ pub const Chip8 = struct {
     }
 
     // cycle through the fetch, decode, and execute steps
-    pub fn cycle(self: *Self) !void {
+    pub fn cycle(self: *Self, print_dissasembly: bool) !void {
         const opcode = self.fetch();
         const instruction = try self.decode(opcode);
+        if (print_dissasembly) {
+            instructionToString(instruction, self);
+        }
         try self.execute(instruction);
-        self.updateTimers(std.time.milliTimestamp());
     }
 
     // fetch the next instruction and increment the program counter
@@ -366,7 +368,7 @@ pub const Chip8 = struct {
                 try self.display.clearScreen();
             },
             .jmp => |jmp_struct| {
-                self.pc = jmp_struct.address & 0x0FFF;
+                self.pc = jmp_struct.address;
                 return;
             },
             .setvx => |setvx_struct| {
@@ -627,6 +629,122 @@ const OpCodes = enum(u16) {
     STORE_MEMORY = 0x0055, // Store registers V0 through VX in memory starting at location I
     LOAD_MEMORY = 0x0065, // Read registers V0 through VX from memory starting at location I
 };
+
+pub fn opcodeToString(opcode: u16) void {
+    const nibble: u4 = @as(u4, @truncate(opcode >> 12));
+    const secondNibble: u4 = @as(u4, @truncate((opcode >> 8) & 0x0F));
+    const thirdNibble: u4 = @as(u4, @truncate((opcode >> 4) & 0x0F));
+    const fourthNibble: u4 = @as(u4, @truncate(opcode & 0x0F));
+    const lastByte: u8 = @as(u8, @truncate(opcode & 0xFF));
+    const address: u12 = @as(u12, @truncate(opcode & 0x0FFF));
+
+    std.debug.print("0x{X} - N: {x}, X: {x}, Y: {x}, Z: {x}, L: {x}, A: {x}\n", .{ opcode, nibble, secondNibble, thirdNibble, fourthNibble, lastByte, address });
+}
+
+pub fn instructionToString(instruction: Instruction, c: *Chip8) void {
+    switch (instruction) {
+        .cls => {
+            std.debug.print("CLS\n", .{});
+        },
+        .jmp => |jmp_struct| {
+            std.debug.print("JMP 0x{X}\n", .{jmp_struct.address});
+        },
+        .setvx => |setvx_struct| {
+            std.debug.print("SETVX V{d}, 0x{X}\n", .{ setvx_struct.register, setvx_struct.value });
+        },
+        .addvx => |addvx_struct| {
+            std.debug.print("ADDVX V{d}, 0x{X}\n", .{ addvx_struct.register, addvx_struct.value });
+        },
+        .seti => |seti_struct| {
+            std.debug.print("SETI 0x{X}\n", .{seti_struct.address});
+        },
+        .draw => |draw_struct| {
+            std.debug.print("DRAW V{d}, V{d}, 0x{X}\n", .{ draw_struct.registerX, draw_struct.registerY, draw_struct.height });
+        },
+        .call => |call_struct| {
+            std.debug.print("CALL 0x{X}\n", .{call_struct.address});
+        },
+        .ret => |ret_struct| {
+            _ = ret_struct;
+            std.debug.print("RET\n", .{});
+        },
+        .skipIfEqual => |skip_if_equal_struct| {
+            std.debug.print("SKIP_IF_EQUAL V{d}, 0x{X} | V{d} = {x}\n", .{ skip_if_equal_struct.register, skip_if_equal_struct.value, skip_if_equal_struct.register, c.v[skip_if_equal_struct.register] });
+        },
+        .skipIfNotEqual => |skip_if_not_equal_struct| {
+            std.debug.print("SKIP_IF_NOT_EQUAL V{d}, 0x{X}\n", .{ skip_if_not_equal_struct.register, skip_if_not_equal_struct.value });
+        },
+        .skipIfEqualRegister => |skip_if_equal_register_struct| {
+            std.debug.print("SKIP_IF_EQUAL_REGISTER V{d}, V{d}\n", .{ skip_if_equal_register_struct.registerX, skip_if_equal_register_struct.registerY });
+        },
+        .skipIfNotEqualRegister => |skip_if_not_equal_register_struct| {
+            std.debug.print("SKIP_IF_NOT_EQUAL_REGISTER V{d}, V{d}\n", .{ skip_if_not_equal_register_struct.registerX, skip_if_not_equal_register_struct.registerY });
+        },
+        .registerSet => |register_set_struct| {
+            std.debug.print("REGISTER_SET V{d}, V{d}\n", .{ register_set_struct.registerX, register_set_struct.registerY });
+        },
+        .binaryAnd => |binary_and_struct| {
+            std.debug.print("BINARY_AND V{d}, V{d}\n", .{ binary_and_struct.registerX, binary_and_struct.registerY });
+        },
+        .binaryOr => |binary_or_struct| {
+            std.debug.print("BINARY_OR V{d}, V{d}\n", .{ binary_or_struct.registerX, binary_or_struct.registerY });
+        },
+        .binaryXor => |binary_xor_struct| {
+            std.debug.print("BINARY_XOR V{d}, V{d}\n", .{ binary_xor_struct.registerX, binary_xor_struct.registerY });
+        },
+        .addRegisterNoCarry => |add_register_no_carry_struct| {
+            std.debug.print("ADD_REGISTER_NO_CARRY V{d}, V{d}\n", .{ add_register_no_carry_struct.registerX, add_register_no_carry_struct.registerY });
+        },
+        .substractRegister => |substract_register_struct| {
+            std.debug.print("SUBSTRACT_REGISTER V{d}, V{d}\n", .{ substract_register_struct.registerX, substract_register_struct.registerY });
+        },
+        .shiftRight => |shift_struct| {
+            std.debug.print("SHIFT_RIGHT V{d}, V{d}\n", .{ shift_struct.registerX, shift_struct.registerY });
+        },
+        .shiftLeft => |shift_left_struct| {
+            std.debug.print("SHIFT_LEFT V{d}, V{d}\n", .{ shift_left_struct.registerX, shift_left_struct.registerY });
+        },
+        .jumpWithOffset => |jump_with_offset_struct| {
+            std.debug.print("JUMP_WITH_OFFSET 0x{X}\n", .{jump_with_offset_struct.address});
+        },
+        .random => |random_struct| {
+            std.debug.print("RANDOM V{d}, 0x{X}\n", .{ random_struct.register, random_struct.value });
+        },
+        .skipIfKeyPressed => |skip_if_key_pressed_struct| {
+            std.debug.print("SKIP_IF_KEY_PRESSED V{d}\n", .{skip_if_key_pressed_struct.register});
+        },
+        .skipIfKeyNotPressed => |skip_if_key_not_pressed_struct| {
+            std.debug.print("SKIP_IF_KEY_NOT_PRESSED V{d}\n", .{skip_if_key_not_pressed_struct.register});
+        },
+        .getKey => |get_key_struct| {
+            std.debug.print("GET_KEY V{d}\n", .{get_key_struct.register});
+        },
+        .getDelayTimer => |get_delay_timer_struct| {
+            std.debug.print("GET_DELAY_TIMER V{d}\n", .{get_delay_timer_struct.register});
+        },
+        .setDelayTimer => |set_delay_timer_struct| {
+            std.debug.print("SET_DELAY_TIMER V{d}\n", .{set_delay_timer_struct.register});
+        },
+        .setSoundTimer => |set_sound_timer_struct| {
+            std.debug.print("SET_SOUND_TIMER V{d}\n", .{set_sound_timer_struct.register});
+        },
+        .addI => |add_i_struct| {
+            std.debug.print("ADD_I V{d}\n", .{add_i_struct.register});
+        },
+        .fontCharacter => |font_character_struct| {
+            std.debug.print("FONT_CHARACTER V{d}\n", .{font_character_struct.register});
+        },
+        .binaryCodedDecimal => |bcd_struct| {
+            std.debug.print("BINARY_CODED_DECIMAL V{d}\n", .{bcd_struct.register});
+        },
+        .storeMemory => |store_memory_struct| {
+            std.debug.print("STORE_MEMORY V{d}\n", .{store_memory_struct.register});
+        },
+        .loadMemory => |load_memory_struct| {
+            std.debug.print("LOAD_MEMORY V{d}\n", .{load_memory_struct.register});
+        },
+    }
+}
 
 const Instruction = union(enum) {
     cls: struct {
