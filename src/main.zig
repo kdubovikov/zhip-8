@@ -12,8 +12,6 @@ pub fn main() !void {
     defer args.deinit();
 
     var display = try dsp.Display.init();
-    // var chip8 = try emu.Chip8.initWithRom("roms/IBM Logo.ch8", &display);
-    // var chip8 = try emu.Chip8.initWithRom("roms/Test Opcode.ch8", &display);
     _ = args.next() orelse return err;
     var romPath: []const u8 = args.next() orelse return err;
     std.debug.print("Loading ROM: {s}\n", .{romPath});
@@ -23,14 +21,11 @@ pub fn main() !void {
 
     try display.clearScreen();
 
-    // try display.playBeep();
-
     var lastTime = display.getTicks();
     while (true) {
         const diff = (display.getTicks() - lastTime);
 
         chip8.updateTimers(display.getTicks());
-        // std.debug.print("Running {d}\n", .{diff});
         if (diff > fps) {
             try display.handleInput();
             for (0..ipf) |i| {

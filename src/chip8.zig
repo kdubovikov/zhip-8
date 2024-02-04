@@ -487,13 +487,11 @@ pub const Chip8 = struct {
             },
             .shiftRight => |shift_struct| {
                 const tmp = self.v[shift_struct.registerX] & 0x1;
-                // self.v[shift_struct.registerX] = self.v[shift_struct.registerY];
                 self.v[shift_struct.registerX] = self.v[shift_struct.registerX] >> 1;
                 self.v[VF] = tmp;
             },
             .shiftLeft => |shift_left_struct| {
                 const tmp = self.v[shift_left_struct.registerX] >> 7;
-                // self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerY];
                 self.v[shift_left_struct.registerX] = self.v[shift_left_struct.registerX] << 1;
                 self.v[VF] = tmp;
             },
@@ -508,26 +506,21 @@ pub const Chip8 = struct {
             .skipIfKeyPressed => |skip_if_key_pressed_struct| {
                 const key = self.v[skip_if_key_pressed_struct.register];
                 if (self.display.keyPressed(key)) {
-                    // std.debug.print("key p: {}\n", .{key});
                     self.pc += 2;
                 }
             },
             .skipIfKeyNotPressed => |skip_if_key_not_pressed_struct| {
                 const key = self.v[skip_if_key_not_pressed_struct.register];
                 if (!self.display.keyPressed(key)) {
-                    // std.debug.print("key notp: {}\n", .{key});
                     self.pc += 2;
                 }
             },
             .getKey => |get_key_struct| {
-                // std.debug.print("getkey", .{});
                 const key = self.display.getPressedKey();
                 if (key == 0xFF) {
-                    // std.debug.print("getkey - none", .{});
                     self.pc -= 2;
                 } else {
                     self.v[get_key_struct.register] = key;
-                    // std.debug.print("getkey - {}", .{key});
                 }
             },
             .getDelayTimer => |get_delay_timer_struct| {
